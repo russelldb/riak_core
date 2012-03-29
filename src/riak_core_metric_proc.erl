@@ -37,23 +37,24 @@
 %%%===================================================================
 
 start_link(App, Name, Args) ->
-    RegName = riak_core_metric:regname(App, Name),
-    gen_server:start_link({local, RegName}, ?MODULE, [{name, Name}|Args], []).
+    gen_server:start_link(?MODULE, [{app, App}, {name, Name}|Args], []).
 
 update(App, Name, Args) ->
-    RegName = riak_core_metric:regname(App, Name),
-    gen_server:cast(RegName, {update, Args}).
+    Pid = gproc:where({n, l, {App, Name}}),
+    gen_server:cast(Pid, {update, Args}).
 
 value(App, Name) ->
     value(App, Name, []).
 
 value(App, Name, Presentation) ->
-    RegName = riak_core_metric:regname(App, Name),
-    {ok, Val} = gen_server:call(RegName, {value, Presentation}),
+    Pid = gproc:where({n, l, {App, Name}}),
+    {ok, Val} = gen_server:call(Pid, {value, Presentation}),
     Val.
 
 init(Args) ->
     Name = proplists:get_value(name, Args),
+    App = proplists:get_value(app, Args),
+    true = gproc:reg({n, l, {App, Name}}, ignored),
     {type, ShortName} = proplists:lookup(type, Args), %% Does mod need init args?
     Mod = mod_from_shortname(ShortName),
     Description = proplists:get_value(description, Args),
