@@ -36,20 +36,17 @@
 %%% API
 %%%===================================================================
 
-start_link(App, Name, Args) ->
-    RegName = riak_core_metric:regname(App, Name),
-    gen_server:start_link({local, RegName}, ?MODULE, [{name, Name}|Args], []).
+start_link(_App, Name, Args) ->
+    gen_server:start_link({local, Name}, ?MODULE, [{name, Name}|Args], []).
 
-update(App, Name, Args) ->
-    RegName = riak_core_metric:regname(App, Name),
-    gen_server:cast(RegName, {update, Args}).
+update(_App, Name, Args) ->
+    gen_server:cast(Name, {update, Args}).
 
 value(App, Name) ->
     value(App, Name, []).
 
-value(App, Name, Presentation) ->
-    RegName = riak_core_metric:regname(App, Name),
-    {ok, Val} = gen_server:call(RegName, {value, Presentation}),
+value(_App, Name, Presentation) ->
+    {ok, Val} = gen_server:call(Name, {value, Presentation}),
     Val.
 
 init(Args) ->
