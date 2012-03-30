@@ -59,24 +59,25 @@ get_stats(_Moment) ->
 %% @doc Update the given stat
 -spec update(Stat::atom()) -> ok.
 update(converge_timer_begin) ->
-    riak_core_metric_duration:start(?APP, converge_delay);
+    riak_core_metric_proc:update(?APP, converge_delay, start);
 update(converge_timer_end) ->
-    riak_core_metric_duration:stop(?APP, converge_delay);
+    riak_core_metric_proc:update(?APP, converge_delay, stop);
 update(rebalance_timer_begin) ->
-    riak_core_metric_duration:start(?APP, rebalance_delay);
+    riak_core_metric_proc:update(?APP, rebalance_delay, start);
 update(rebalance_timer_end) ->
-    riak_core_metric_duration:stop(?APP, rebalance_delay);
+    riak_core_metric_proc:update(?APP, rebalance_delay, stop);
 update(rejected_handoffs) ->
-    riak_core_metric_counter:increment(?APP, rejected_handoffs);
+    riak_core_metric_proc:update(?APP, rejected_handoffs, 1);
 update(handoff_timeouts) ->
-    riak_core_metric_counter:increment(?APP, handoff_timeouts);
+    riak_core_metric_proc:update(?APP, handoff_timeouts, 1);
 update(ignored_gossip) ->
-    riak_core_metric_counter:increment(?APP, ignored_gossip_total);
+    riak_core_metric_proc:update(?APP, ignored_gossip_totals, 1);
 update(gossip_received) ->
-    riak_core_metric_meter:increment(?APP, gossip_received, slide:moment());
+    riak_core_metric_proc:update(?APP, gossip_received, {1, slide:moment()});
 update(rings_reconciled) ->
+    riak_core_metric_proc:update(?APP, rings_reconciled, {1, slide:moment()}),
     riak_core_metric_meter:increment(?APP, rings_reconciled, slide:moment()),
-    riak_core_metric_counter:increment(?APP, rings_reconciled_total);
+    riak_core_metric_proc:update(?APP, rings_reconciled_total, 1);
 update(_) ->
     ok.
 
