@@ -51,8 +51,8 @@ value(_App, Name, Presentation) ->
 
 init(Args) ->
     Name = proplists:get_value(name, Args),
-    {type, ShortName} = proplists:lookup(type, Args), %% Does mod need init args?
-    Mod = mod_from_shortname(ShortName),
+    {type, Type} = proplists:lookup(type, Args), %% Does mod need init args?
+    Mod = mod_from_type(Type),
     Description = proplists:get_value(description, Args),
     DisplaySpec =  proplists:get_value(presentation, Args),
     ModState = Mod:new(),
@@ -89,5 +89,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-mod_from_shortname(ShortName) ->
+mod_from_type({mod, Mod}) ->
+    Mod;
+mod_from_type(ShortName) ->
     list_to_atom("riak_core_metric_" ++ atom_to_list(ShortName)).
