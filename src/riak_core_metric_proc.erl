@@ -52,14 +52,15 @@ value(_App, Name, Presentation) ->
     {ok, Val} = gen_server:call(Name, {value, Presentation}),
     Val.
 
-init(Args) ->
-    Name = proplists:get_value(name, Args),
-    {type, ShortName} = proplists:lookup(type, Args), %% Does mod need init args?
-    Mod = mod_from_shortname(ShortName),
-    Description = proplists:get_value(description, Args),
-    DisplaySpec =  proplists:get_value(presentation, Args),
-    ModState = Mod:new(),
-    {ok, #state{name=Name, mod=Mod, mod_state=ModState, description=Description, presentation=DisplaySpec}}.
+init(_Args) ->
+    %% Name = proplists:get_value(name, Args),
+    %% {type, ShortName} = proplists:lookup(type, Args), %% Does mod need init args?
+    %% Mod = mod_from_shortname(ShortName),
+    %% Description = proplists:get_value(description, Args),
+    %% DisplaySpec =  proplists:get_value(presentation, Args),
+    %% ModState = Mod:new(),
+    %% {ok, #state{name=Name, mod=Mod, mod_state=ModState, description=Description, presentation=DisplaySpec}}.
+    {ok, #state{mod=no_op_metric}}.
 
 handle_call({value, _}, _From, #state{mod=Mod, mod_state=ModState, presentation=undefined, name=Name}=State) ->
     Stat = Mod:value(Name, ModState),

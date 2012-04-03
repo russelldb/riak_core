@@ -12,6 +12,7 @@
              gen_server2,
              json_pp,
              merkerl,
+             no_op_metric,
              priority_queue,
              process_proxy,
              riak_core_gossip_legacy,
