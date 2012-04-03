@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3, update/3, value/2, value/3]).
+-export([start_link/3, update/3, value/2, value/3, batch/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -38,6 +38,9 @@
 
 start_link(_App, Name, Args) ->
     gen_server:start_link({local, Name}, ?MODULE, [{name, Name}|Args], []).
+
+batch(_App, Name, Fun) ->
+    gen_server:cast(Name, {batch, Fun}).
 
 update(_App, Name, Args) ->
     gen_server:cast(Name, {update, Args}).
@@ -75,7 +78,10 @@ handle_call({value, Presentation}, _From, #state{mod=Mod, mod_state=ModState, pr
 
 handle_cast({update, Args}, #state{mod=Mod, mod_state=ModState0}=State) ->
     ModState = Mod:update(Args, ModState0),
-    {noreply, State#state{mod_state=ModState}}.
+    {noreply, State#state{mod_state=ModState}};
+handle_cast({batch, Fun}, State) ->
+    Fun(),
+    {noreply, State}.
 
 handle_info(_Info, State) ->
     {noreply, State}.
