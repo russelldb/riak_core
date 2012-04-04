@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3, update/3, value/2, value/3, batch/3]).
+-export([start_link/3, update/3, value/2, value/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -38,9 +38,6 @@
 
 start_link(_App, Name, Args) ->
     gen_server:start_link({local, Name}, ?MODULE, [{name, Name}|Args], []).
-
-batch(_App, Name, Fun) ->
-    gen_server:cast(Name, {batch, Fun}).
 
 update(_App, Name, Args) ->
     gen_server:cast(Name, {update, Args}).
@@ -66,12 +63,6 @@ init(Args) ->
     put(name, Name),
     {ok, ok}.
 
-handle_call({value, _}, _From, ok) -> %%#state{mod=Mod, mod_state=ModState, presentation=undefined, name=Name}=State) ->
-    Mod = get(mod),
-    ModState = get(mod_state),
-    Name = get(name),
-    Stat = Mod:value(Name, ModState),
-    {reply, {ok, Stat}, ok};
 handle_call({value, undefined}, _From, ok) -> %%#state{mod=Mod, mod_state=ModState, name=Name}=State) ->
     Mod = get(mod),
     ModState = get(mod_state),
@@ -83,11 +74,16 @@ handle_call({value, Presentation}, _From, ok) -> %% #state{mod=Mod, mod_state=Mo
     Mod = get(mod),
     ModState = get(mod_state),
     Name = get(name),
-    Stat = case proplists:get_value(Presentation, DisplaySpecs) of
+    Stat = case DisplaySpecs of
                undefined ->
                    Mod:value(Name, ModState);
-               DisplaySpec ->
-                   Mod:value(DisplaySpec, Name, ModState)
+               Spec ->
+                   case proplists:get_value(Presentation, Spec) of
+                       undefined ->
+                           Mod:value(Name, ModState);
+                       DisplaySpec ->
+                           Mod:value(DisplaySpec, Name, ModState)
+                   end
            end,
     {reply, {ok, Stat}, ok}.
 
@@ -96,10 +92,7 @@ handle_cast({update, Args}, ok) -> %%#state{mod=Mod, mod_state=ModState0}=State)
     ModState0 = get(mod_state),
     ModState = Mod:update(Args, ModState0),
     put(mod_state, ModState),
-    {noreply, ok};
-handle_cast({batch, Fun}, State) ->
-    Fun(),
-    {noreply, State}.
+    {noreply, ok}.
 
 handle_info(_Info, State) ->
     {noreply, State}.
