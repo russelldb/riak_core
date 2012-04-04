@@ -60,26 +60,44 @@ init(Args) ->
     Description = proplists:get_value(description, Args),
     DisplaySpec =  proplists:get_value(presentation, Args),
     ModState = Mod:new(),
-    {ok, #state{name=Name, mod=Mod, mod_state=ModState, description=Description, presentation=DisplaySpec}}.
+    gproc:reg({p, l, name}, Name),
+    gproc:reg({p, l, mod}, Mod),
+    gproc:reg({p, l, mod_state}, ModState),
+    gproc:reg({p, l, description}, Description),
+    gproc:reg({p, l, presentation}, DisplaySpec),
+    {ok, ok}.
 
-handle_call({value, _}, _From, #state{mod=Mod, mod_state=ModState, presentation=undefined, name=Name}=State) ->
+handle_call({value, _}, _From, ok) ->
+    Mod = gproc:get_value({p, l, mod}),
+    ModState = gproc:get_value({p, l, mod_state}),
+    Name = gproc:get_value({p, l, name}),
     Stat = Mod:value(Name, ModState),
-    {reply, {ok, Stat}, State};
-handle_call({value, undefined}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
+    {reply, {ok, Stat}, ok};
+handle_call({value, undefined}, _From, ok) ->
+    Mod = gproc:get_value({p, l, mod}),
+    ModState = gproc:get_value({p, l, mod_state}),
+    Name = gproc:get_value({p, l, name}),
     Stat = Mod:value(Name, ModState),
-    {reply, {ok, Stat}, State};
-handle_call({value, Presentation}, _From, #state{mod=Mod, mod_state=ModState, presentation=DisplaySpecs, name=Name}=State) ->
+    {reply, {ok, Stat}, ok};
+handle_call({value, Presentation}, _From, ok) ->
+    Mod = gproc:get_value({p, l, mod}),
+    ModState = gproc:get_value({p, l, mod_state}),
+    Name = gproc:get_value({p, l, name}),
+    DisplaySpecs = gproc:get_value({p, l, presentation}),
     Stat = case proplists:get_value(Presentation, DisplaySpecs) of
                undefined ->
                    Mod:value(Name, ModState);
                DisplaySpec ->
                    Mod:value(DisplaySpec, Name, ModState)
            end,
-    {reply, {ok, Stat}, State}.
+    {reply, {ok, Stat}, ok}.
 
-handle_cast({update, Args}, #state{mod=Mod, mod_state=ModState0}=State) ->
+handle_cast({update, Args}, ok) ->
+    Mod = gproc:get_value({p, l, mod}),
+    ModState0 = gproc:get_value({p, l, mod_state}),
     ModState = Mod:update(Args, ModState0),
-    {noreply, State#state{mod_state=ModState}}.
+    gproc:set_value({p, l, mod_state}, ModState),
+    {noreply, ok}.
 
 handle_info(_Info, State) ->
     {noreply, State}.
