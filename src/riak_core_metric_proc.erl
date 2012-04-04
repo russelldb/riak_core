@@ -30,7 +30,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {name, mod, mod_state, presentation, description}).
+%%-record(state, {name}).
 
 %%%===================================================================
 %%% API
@@ -56,26 +56,33 @@ init(Args) ->
     Description = proplists:get_value(description, Args),
     DisplaySpec =  proplists:get_value(presentation, Args),
     ModState = Mod:new(),
-    {ok, #state{name=Name, mod=Mod, mod_state=ModState, description=Description, presentation=DisplaySpec}}.
+    ets:insert(stats, {Name,  Mod,  ModState, Description, DisplaySpec}),
+    {ok, Name}.
 
-handle_call({value, _}, _From, #state{mod=Mod, mod_state=ModState, presentation=undefined, name=Name}=State) ->
+handle_call({value, undefined}, _From, Name) ->
+    [{Name, Mod, ModState, _, _}] = ets:lookup(stats, Name),
     Stat = Mod:value(Name, ModState),
-    {reply, {ok, Stat}, State};
-handle_call({value, undefined}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
-    Stat = Mod:value(Name, ModState),
-    {reply, {ok, Stat}, State};
-handle_call({value, Presentation}, _From, #state{mod=Mod, mod_state=ModState, presentation=DisplaySpecs, name=Name}=State) ->
-    Stat = case proplists:get_value(Presentation, DisplaySpecs) of
+    {reply, {ok, Stat}, Name};
+handle_call({value, Presentation}, _From, Name) ->
+    [{Name, Mod, ModState, _, DisplaySpecs}] = ets:lookup(stats, Name),
+    Stat = case DisplaySpecs of 
                undefined ->
                    Mod:value(Name, ModState);
-               DisplaySpec ->
-                   Mod:value(DisplaySpec, Name, ModState)
+               Spec ->
+                   case proplists:get_value(Presentation, Spec) of
+                       undefined ->
+                           Mod:value(Name, ModState);
+                       DisplaySpec ->
+                           Mod:value(DisplaySpec, Name, ModState)
+                   end
            end,
-    {reply, {ok, Stat}, State}.
+    {reply, {ok, Stat}, Name}.
 
-handle_cast({update, Args}, #state{mod=Mod, mod_state=ModState0}=State) ->
+handle_cast({update, Args}, Name) ->
+    [{Name, Mod, ModState0, _, _}] = ets:lookup(stats, Name),
     ModState = Mod:update(Args, ModState0),
-    {noreply, State#state{mod_state=ModState}}.
+    ets:update_element(stats, Name, {3, ModState}),
+    {noreply, Name}.
 
 handle_info(_Info, State) ->
     {noreply, State}.

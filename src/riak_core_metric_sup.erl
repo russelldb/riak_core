@@ -37,6 +37,8 @@ start_link(App, Mod) ->
     end.
 
 init([]) ->
+    %% start ets table for stat state
+    ets:new(stats, [set, named_table, public]),
     remove_slide_private_dirs(),
     %% Populate supervisor list with stats for already registered app,stat
     %% modules. Ensures restart of stat procs after a crash of this supervisor.
