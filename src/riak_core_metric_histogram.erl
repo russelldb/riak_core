@@ -24,8 +24,6 @@
 
 -export([new/0, value/2, value/3,  update/2]).
 
--export([increment/4]).
-
 -export_type([display_spec/0]).
 
 -type display()       :: [{field(), integer()}].
@@ -36,25 +34,23 @@
 -type fields()        :: {fields, [fields()]}.
 -type prefix()        :: {prefix, atom() | string() | binary() | integer()}.
 
-%% @doc update histogram for App Stat with Reading for the given
-%%      Moment.
--spec increment(atom(), atom(), integer(), integer()) -> ok.
-increment(App, Stat, Reading, Moment) ->
-    riak_core_metric_proc:update(App, Stat, {Reading, Moment}).
 
 %% Behaviour
 %% @doc a new, fresh histogram
 -spec new() -> slide:slide().
 new() ->
-    slide:fresh().
+    {ok, H} = basho_metrics_nifs:histogram_new(),
+    H.
 
 %% @doc Sum of readings from now to 'window size' seconds ago.
 %%      Returns total number of readings and the sum of those
 %%      readings.
 -spec value(atom(), slide:slide()) ->
                    {atom(), {non_neg_integer(), number()}}.
-value(Name, Slide) ->
-    {Name, slide:sum(Slide)}.
+value(Name, Histo) ->
+    Stats = basho_metrics_nifs:histogram_stats(Histo),
+    Count = proplists:get_value(count, Stats),
+    {Name, Count}.
 
 %% @doc returns the fields of the histogram defined in the
 %%      display spec. Use the 'args' in the display spec
@@ -62,34 +58,25 @@ value(Name, Slide) ->
 %% @see slide:mean_and_nines/6
 -spec value(display_spec(), atom(), slide:slide()) ->
                    display().
-value(DisplaySpec, Name,  Slide) ->
-    {Min, Max, Bins, RoundingMode} = proplists:get_value(args, DisplaySpec),
+value(DisplaySpec, Name,  Histo) ->
     Fields = proplists:get_value(fields, DisplaySpec),
     Prefix = proplists:get_value(prefix, DisplaySpec),
-    Res = slide:mean_and_nines(Slide, slide:moment(), Min, Max, Bins, RoundingMode),
-    PL = to_proplist(Res),
+    Stats0 = basho_metrics_nifs:histogram_stats(Histo),
+    Stats = lists:map(fun({p50, V}) -> {median, V};
+                         ({p95, V}) -> {'95', V};
+                         ({p99, V}) -> {'99', V};
+                         ({max, V}) -> {'100', V};
+                         (E)        -> E end,
+                      Stats0),
     FieldPrefix = field_prefix(Prefix, Name),
-    display(FieldPrefix, Fields, PL, []).
+    display(FieldPrefix, Fields, Stats, []).
 
 %% @doc update histogram with Reading for given Moment
 -spec update({integer(), integer()}, slide:slide()) ->
                     slide:slide().
-update({Reading, Moment}, Slide) ->
-    slide:update(Slide, Reading, Moment).
-
-%% Internal
-%% @doc transform the out put of slide:mean_and_nines/6
-%% to a proplist
--spec to_proplist({integer(), integer(),
-                   {integer(), integer(), integer(), integer()}}) ->
-                         display().
-to_proplist({Cnt, Mean, {Median, NineFive, NineNine, Max}}) ->
-    [{count, Cnt},
-     {mean, Mean},
-     {median, Median},
-     {'95', NineFive},
-     {'99', NineNine},
-     {'100', Max}].
+update({Reading, _Moment}, Histo) ->
+    ok = basho_metrics_nifs:histogram_update(Histo, Reading),
+    Histo.
 
 %% @doc add a prefix Prefix_ to the given Field
 -spec field_prefix(atom(), field()) ->

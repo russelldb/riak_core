@@ -56,15 +56,24 @@ init(Args) ->
     Description = proplists:get_value(description, Args),
     DisplaySpec =  proplists:get_value(presentation, Args),
     ModState = Mod:new(),
-    {ok, #state{name=Name, mod=Mod, mod_state=ModState, description=Description, presentation=DisplaySpec}}.
+    if Type == meter ->
+            %% start a tick
+            timer:send_interval(5000, tick); 
+       true ->
+            ok
+    end,
+    {ok, #state{name=Name, mod=Mod, mod_state=ModState,
+                description=Description, presentation=DisplaySpec}}.
 
-handle_call({value, _}, _From, #state{mod=Mod, mod_state=ModState, presentation=undefined, name=Name}=State) ->
+handle_call({value, _}, _From, #state{mod=Mod, mod_state=ModState,
+                                      presentation=undefined, name=Name}=State) ->
     Stat = Mod:value(Name, ModState),
     {reply, {ok, Stat}, State};
 handle_call({value, undefined}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
     Stat = Mod:value(Name, ModState),
     {reply, {ok, Stat}, State};
-handle_call({value, Presentation}, _From, #state{mod=Mod, mod_state=ModState, presentation=DisplaySpecs, name=Name}=State) ->
+handle_call({value, Presentation}, _From, #state{mod=Mod, mod_state=ModState,
+                                                 presentation=DisplaySpecs, name=Name}=State) ->
     Stat = case proplists:get_value(Presentation, DisplaySpecs) of
                undefined ->
                    Mod:value(Name, ModState);
@@ -77,6 +86,9 @@ handle_cast({update, Args}, #state{mod=Mod, mod_state=ModState0}=State) ->
     ModState = Mod:update(Args, ModState0),
     {noreply, State#state{mod_state=ModState}}.
 
+handle_info(tick,  #state{mod=Mod, mod_state=ModState}=State) ->
+    Mod:tick(ModState),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 

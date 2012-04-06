@@ -25,39 +25,21 @@
 %% Behaviour API
 -export([new/0, value/2, value/3, update/2]).
 
-%% Usage API
--export([increment/3, increment/4, minute/2]).
-
-%% @doc update the count for the App Stat by Amount for the
-%% given moment.
--spec increment(atom(), atom(), integer(), integer()) -> ok.
-increment(App, Stat, Amount, Moment) ->
-    riak_core_metric_proc:update(App, Stat, {Amount, Moment}).
-
-%% @doc update the count for the App Stat by 1 for the
-%% given moment.
--spec increment(atom(), atom(), integer()) -> ok.
-increment(App, Stat, Moment) ->
-    increment(App, Stat, 1, Moment).
-
-%% @doc display the number of entries in the last minute
-%% for App Stat.
--spec minute(atom(), atom()) -> {atom(), integer()}.
-minute(App, Stat) ->
-    riak_core_metric_proc:value(App, Stat).
+-export([tick/1]).
 
 %% @doc create a new meter.
 -spec new() -> spiraltime:spiral().
 new() ->
-    spiraltime:fresh().
+    {ok, M} = basho_metrics_nifs:meter_new(),
+    M.
 
 %% @doc format the number of entries in the last minute as
 %% {name, count}.
 -spec value(atom(), spiraltime:spiral()) ->
                    {atom(), integer()}.
 value(Name, Meter) ->
-    {_Moment, Count} = spiraltime:rep_minute(Meter),
-    {Name, Count}.
+    Stats = basho_metrics_nifs:meter_stats(Meter),
+    {Name, proplists:get_value(count, Stats)}.
 
 %% @doc format the number of entries in the last minute as
 %% {name, count}.
@@ -70,5 +52,9 @@ value({display_name, Name}, _StatName, Meter) ->
 %%  in the given Meter
 -spec update({integer(), integer()}, spiraltime:spiral()) ->
                     spiraltime:spiral().
-update({Amount, Moment}, Meter) ->
-    spiraltime:incr(Amount, Moment, Meter).
+update({Amount, _Moment}, Meter) ->
+    ok = basho_metrics_nifs:meter_update(Meter, Amount),
+    Meter.
+
+tick(Meter) ->
+    basho_metrics_nifs:meter_tick(Meter).
