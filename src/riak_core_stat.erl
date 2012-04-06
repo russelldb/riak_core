@@ -76,7 +76,6 @@ update(gossip_received) ->
     riak_core_metric_proc:update(?APP, gossip_received, {1, slide:moment()});
 update(rings_reconciled) ->
     riak_core_metric_proc:update(?APP, rings_reconciled, {1, slide:moment()}),
-    riak_core_metric_meter:increment(?APP, rings_reconciled, slide:moment()),
     riak_core_metric_proc:update(?APP, rings_reconciled_total, 1);
 update(_) ->
     ok.
