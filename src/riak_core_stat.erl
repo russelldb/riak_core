@@ -33,11 +33,10 @@
 -spec stat_specs() -> riak_core_metric:stat_specs().
 stat_specs() ->
     [{ignored_gossip_total, [{type, counter}, {group, gossip}]},
-     {rings_reconciled_total, [{type, counter}, {group, gossip}]},
      {rejected_handoffs, [{type, counter}, {group, gossip}]},
      {handoff_timeouts, [{type, counter}, {group, gossip}]},
      {gossip_received, [{type, meter}, {group, gossip}]},
-     {rings_reconciled, [{type, meter}, {group, gossip}]},
+     {rings_reconciled, [{type, tmeter}, {group, gossip}]},
      {converge_delay, [{type, duration}, {group, gossip},
                        {presentation,
                         [{legacy, [min, max, mean, last]}]}]},
@@ -73,8 +72,7 @@ update(ignored_gossip) ->
 update(gossip_received) ->
     riak_core_metric_proc:update(gossip_received, {1, slide:moment()});
 update(rings_reconciled) ->
-    riak_core_metric_proc:update(rings_reconciled, {1, slide:moment()}),
-    riak_core_metric_proc:update(rings_reconciled_total, 1);
+    riak_core_metric_proc:update(rings_reconciled, {1, slide:moment()});
 update(_) ->
     ok.
 
