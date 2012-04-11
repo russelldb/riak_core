@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3, update/3, value/2, value/3]).
+-export([start_link/2, update/2, value/1, value/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -36,16 +36,16 @@
 %%% API
 %%%===================================================================
 
-start_link(_App, Name, Args) ->
+start_link(Name, Args) ->
     gen_server:start_link({local, Name}, ?MODULE, [{name, Name}|Args], []).
 
-update(_App, Name, Args) ->
+update(Name, Args) ->
     gen_server:cast(Name, {update, Args}).
 
-value(App, Name) ->
-    value(App, Name, []).
+value(Name) ->
+    value(Name, []).
 
-value(_App, Name, Presentation) ->
+value(Name, Presentation) ->
     {ok, Val} = gen_server:call(Name, {value, Presentation}),
     Val.
 
@@ -56,7 +56,8 @@ init(Args) ->
     Description = proplists:get_value(description, Args),
     DisplaySpec =  proplists:get_value(presentation, Args),
     ModState = Mod:new(),
-    if Type == meter ->
+    DoTicks = do_ticks(Mod),
+    if DoTicks == true ->
             %% start a tick
             timer:send_interval(5000, tick); 
        true ->
@@ -105,3 +106,11 @@ mod_from_type({mod, Mod}) ->
     Mod;
 mod_from_type(ShortName) ->
     list_to_atom("riak_core_metric_" ++ atom_to_list(ShortName)).
+
+do_ticks(Mod) ->
+    case proplists:get_value(tick, Mod:module_info(exports)) of
+        1 ->
+            true;
+        _ ->
+            false
+    end.

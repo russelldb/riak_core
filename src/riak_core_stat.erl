@@ -26,8 +26,6 @@
 %% Metrics API
 -export([stat_specs/0]).
 
--define(APP, riak_core).
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -59,24 +57,24 @@ get_stats(_Moment) ->
 %% @doc Update the given stat
 -spec update(Stat::atom()) -> ok.
 update(converge_timer_begin) ->
-    riak_core_metric_proc:update(?APP, converge_delay, start);
+    riak_core_metric_proc:update(converge_delay, start);
 update(converge_timer_end) ->
-    riak_core_metric_proc:update(?APP, converge_delay, stop);
+    riak_core_metric_proc:update(converge_delay, stop);
 update(rebalance_timer_begin) ->
-    riak_core_metric_proc:update(?APP, rebalance_delay, start);
+    riak_core_metric_proc:update(rebalance_delay, start);
 update(rebalance_timer_end) ->
-    riak_core_metric_proc:update(?APP, rebalance_delay, stop);
+    riak_core_metric_proc:update(rebalance_delay, stop);
 update(rejected_handoffs) ->
-    riak_core_metric_proc:update(?APP, rejected_handoffs, 1);
+    riak_core_metric_proc:update(rejected_handoffs, 1);
 update(handoff_timeouts) ->
-    riak_core_metric_proc:update(?APP, handoff_timeouts, 1);
+    riak_core_metric_proc:update(handoff_timeouts, 1);
 update(ignored_gossip) ->
-    riak_core_metric_proc:update(?APP, ignored_gossip_totals, 1);
+    riak_core_metric_proc:update(ignored_gossip_totals, 1);
 update(gossip_received) ->
-    riak_core_metric_proc:update(?APP, gossip_received, {1, slide:moment()});
+    riak_core_metric_proc:update(gossip_received, {1, slide:moment()});
 update(rings_reconciled) ->
-    riak_core_metric_proc:update(?APP, rings_reconciled, {1, slide:moment()}),
-    riak_core_metric_proc:update(?APP, rings_reconciled_total, 1);
+    riak_core_metric_proc:update(rings_reconciled, {1, slide:moment()}),
+    riak_core_metric_proc:update(rings_reconciled_total, 1);
 update(_) ->
     ok.
 
@@ -93,7 +91,7 @@ produce_stats(Presentation) ->
 %% @spec gossip_stats(integer()) -> proplist()
 %% @doc Get the gossip stats proplist.
 gossip_stats(Presentation) ->
-    GossipStats = [riak_core_metric_proc:value(?APP, Name, Presentation) || {Name, Spec} <- stat_specs(), lists:keyfind(gossip, 2, Spec) /= false],
+    GossipStats = [riak_core_metric_proc:value(Name, Presentation) || {Name, Spec} <- stat_specs(), lists:keyfind(gossip, 2, Spec) /= false],
     lists:flatten( GossipStats ).
 
 %% Provide aggregate stats for vnode queues.  Compute instantaneously for now,
