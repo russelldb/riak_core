@@ -22,22 +22,22 @@
 
 -behaviour(riak_core_metric).
 
--export([new/0, value/2, value/3,  update/2]).
+-export([new/0, value/2, value/3, update/2]).
+-export([options/0]).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export_type([display_spec/0]).
 
--type display()       :: [{field(), integer()}].
 -type field()         :: count | mean | median | '95' | '99' | '100'.
--type display_spec()  :: [ args() | fields() | prefix() ].
--type args()          :: {args, {Min::integer(), Max::integer(), Bins::integer(),
-                          RoundingMode:: up | down}}.
--type fields()        :: {fields, [fields()]}.
--type prefix()        :: {prefix, atom() | string() | binary() | integer()}.
+-type display_spec()   :: [field() | {field(), Name :: atom()}].
 
+-define(FIELDS, [min, max, mean, count, stddev, p50, p95, p99]).
 
 %% Behaviour
 %% @doc a new, fresh histogram
--spec new() -> slide:slide().
 new() ->
     {ok, H} = basho_metrics_nifs:histogram_new(),
     H.
@@ -45,50 +45,29 @@ new() ->
 %% @doc Sum of readings from now to 'window size' seconds ago.
 %%      Returns total number of readings and the sum of those
 %%      readings.
--spec value(atom(), slide:slide()) ->
-                   {atom(), {non_neg_integer(), number()}}.
 value(Name, Histo) ->
-    Stats = basho_metrics_nifs:histogram_stats(Histo),
-    Count = proplists:get_value(count, Stats),
-    {Name, Count}.
+    value(0, Name, Histo).
+
+value(Level, Name, Histo) when is_integer(Level) ->
+    Fields = {fields, fields(Level)},
+    value([{level, Level}, Fields], Name, Histo);
 
 %% @doc returns the fields of the histogram defined in the
 %%      display spec. Use the 'args' in the display spec
 %%      to produce results.
 %% @see slide:mean_and_nines/6
--spec value(display_spec(), atom(), slide:slide()) ->
-                   display().
 value(DisplaySpec, Name,  Histo) ->
-    Fields = proplists:get_value(fields, DisplaySpec),
-    Prefix = proplists:get_value(prefix, DisplaySpec),
-    Stats0 = basho_metrics_nifs:histogram_stats(Histo),
-    Stats = lists:map(fun({p50, V}) -> {median, V};
-                         ({p95, V}) -> {'95', V};
-                         ({p99, V}) -> {'99', V};
-                         ({max, V}) -> {'100', V};
-                         (E)        -> E end,
-                      Stats0),
-    FieldPrefix = field_prefix(Prefix, Name),
-    display(FieldPrefix, Fields, Stats, []).
+    Fields = proplists:get_value(fields, DisplaySpec, ?FIELDS),
+    Stats = basho_metrics_nifs:histogram_stats(Histo),
+    display(Name, Fields, Stats, []).
 
 %% @doc update histogram with Reading for given Moment
--spec update({integer(), integer()}, slide:slide()) ->
-                    slide:slide().
 update({Reading, _Moment}, Histo) ->
     ok = basho_metrics_nifs:histogram_update(Histo, Reading),
     Histo.
 
-%% @doc add a prefix Prefix_ to the given Field
--spec field_prefix(atom(), field()) ->
-                          atom().
-field_prefix(undefined, Name) ->
-    Name;
-field_prefix(Prefix, Name) ->
-    riak_core_metric:join_as_atom([Prefix, '_', Name]).
 
 %% @doc produce a proplist containing only specified fields
--spec display(atom(), [field()], display(), display()) ->
-                     display().
 display(_Prefix, [], _Stat, Acc) ->
     lists:reverse(Acc);
 display(Prefix, [{Field, Name}|Rest], Stats, Acc) ->
@@ -98,3 +77,43 @@ display(Prefix, [Field|Rest], Stats, Acc) ->
     Name = riak_core_metric:join_as_atom([Prefix, '_',  Field]),
     Item = {Name, proplists:get_value(Field, Stats)},
     display(Prefix, Rest, Stats, [Item|Acc]).
+
+fields(0) ->
+    [count];
+fields(1) ->
+    [count, min, max, mean];
+fields(_) ->
+    ?FIELDS.
+
+options() ->
+    ?FIELDS.
+
+-ifdef(TEST).
+
+display_test_() ->
+    {setup,
+     fun() -> 
+             riak_core_metric_histogram:new() end,
+     fun(_) -> ok end,
+     fun(Histo) ->
+             [?_assertEqual([{histo_count, 0}], riak_core_metric_histogram:value(histo, Histo)),
+              ?_assertEqual([{histo_count, 0}], riak_core_metric_histogram:value(0, histo, Histo)),
+              ?_assertEqual([{histo_count, 0},
+                             {histo_min, 0},
+                             {histo_max, 0},
+                             {histo_mean, 0}], riak_core_metric_histogram:value(1, histo, Histo)),
+              ?_assertEqual([{histo_count, 0},
+                             {histo_min, 0},
+                             {histo_max, 0},
+                             {histo_mean, 0}], riak_core_metric_histogram:value(1, histo, Histo)),
+              ?_assertEqual([{histo_min,0},
+                             {histo_max,0},
+                             {histo_mean,0},
+                             {histo_count,0},
+                             {histo_stddev,0},
+                             {histo_p50,0},
+                             {histo_p95,0},
+                             {histo_p99,0}], riak_core_metric_histogram:value(2, histo, Histo))]
+     end}.
+
+-endif.

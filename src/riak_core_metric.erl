@@ -25,6 +25,10 @@
 
 -export([behaviour_info/1, regname/2, join_as_atom/1]).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export_type([stat_specs/0]).
 
 -type stat_specs() ::  [stat()].
@@ -80,4 +84,15 @@ to_binary(List) when is_list(List) ->
 to_binary(Bin) when is_binary(Bin) ->
     Bin;
 to_binary(Int) when is_integer(Int) ->
-    <<Int>>.
+    list_to_binary(integer_to_list(Int)).
+
+
+-ifdef(TEST).
+
+join_as_atom_test_() ->
+    [?_assertEqual('bob jones', join_as_atom([bob, " ", jones])),
+     ?_assertEqual(hello_world,join_as_atom(["hello", '_',  world])),
+     ?_assertEqual(back_beast, join_as_atom([<<"ba">>, <<"ck">>, <<"_">>, beast])),
+     ?_assertEqual('12345', join_as_atom([1, 2, 3, 4, 5]))].
+
+-endif.
