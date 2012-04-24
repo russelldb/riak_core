@@ -23,38 +23,62 @@
 -behaviour(riak_core_metric).
 
 %% Behaviour API
--export([new/0, value/2, value/3, update/2]).
+-export([new/0, value/3, value/4, update/2, options/1]).
 
 -export([tick/1]).
 
-%% @doc create a new meter.
--spec new() -> spiraltime:spiral().
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 new() ->
     {ok, M} = basho_metrics_nifs:meter_new(),
     M.
 
+options(_Stat) ->
+    [count, one, five, fifteen].
+
 %% @doc format the number of entries in the last minute as
 %% {name, count}.
--spec value(atom(), spiraltime:spiral()) ->
-                   {atom(), integer()}.
-value(Name, Meter) ->
+value(Level, Name, Meter) ->
+    [value(Level, Field, Name, Meter) || Field <- fields(Level)].
+
+value(_Level, Field, Name, Meter) ->
     Stats = basho_metrics_nifs:meter_stats(Meter),
-    {Name, proplists:get_value(count, Stats)}.
+    StatName = riak_core_metric:join_as_atom([Name, '_', Field]),
+    Stat = proplists:get_value(Field, Stats),
+    {StatName, trunc(Stat)}.
 
-%% @doc format the number of entries in the last minute as
-%% {name, count}.
--spec value(_, atom(), spiraltime:spiral()) ->
-                   {atom(), integer()}.
-value({display_name, Name}, _StatName, Meter) ->
-    value(Name, Meter).
-
-%% @doc update the entry for the given Moment by Amount,
-%%  in the given Meter
--spec update({integer(), integer()}, spiraltime:spiral()) ->
-                    spiraltime:spiral().
 update({Amount, _Moment}, Meter) ->
     ok = basho_metrics_nifs:meter_update(Meter, Amount),
     Meter.
 
 tick(Meter) ->
     basho_metrics_nifs:meter_tick(Meter).
+
+fields(0) ->
+    [count, one];
+fields(Level) when is_integer(Level) ->
+    options(ok).
+
+-ifdef(TEST).
+
+display_test_() ->
+    {setup,
+     fun() ->
+             riak_core_metric_meter:new() end,
+     fun(_) ->
+             ok end,
+     fun(Meter) ->
+             [?_assertEqual([{stat_count, 0}, {stat_one, 0}], riak_core_metric_meter:value(0, stat, Meter))] ++
+                 [?_assertEqual([{stat_count, 0},
+                                 {stat_one, 0},
+                                 {stat_five, 0},
+                                 {stat_fifteen, 0}],
+                                riak_core_metric_meter:value(Level, stat, Meter)) || Level <- lists:seq(1, 5)] ++
+                 [?_assertEqual({stat_count, 0}, riak_core_metric_meter:value(1, count, stat, Meter)),
+                  ?_assertEqual({stat_one, 0}, riak_core_metric_meter:value(1, one, stat, Meter)),
+                  ?_assertEqual({stat_five, 0}, riak_core_metric_meter:value(1, five, stat, Meter)),
+                  ?_assertEqual({stat_fifteen, 0}, riak_core_metric_meter:value(1, fifteen, stat, Meter))]
+     end}.
+-endif.

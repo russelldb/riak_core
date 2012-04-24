@@ -24,13 +24,13 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, update/2, value/1, value/2]).
+-export([start_link/2, update/2, value/1, value/2, value/3, options/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {name, mod, mod_state, presentation, description}).
+-record(state, {name, mod, mod_state, description}).
 
 %%%===================================================================
 %%% API
@@ -43,45 +43,45 @@ update(Name, Args) ->
     gen_server:cast(Name, {update, Args}).
 
 value(Name) ->
-    value(Name, []).
+    value(Name, 0).
 
-value(Name, Presentation) ->
-    {ok, Val} = gen_server:call(Name, {value, Presentation}),
+value(Name, Level) when is_integer(Level) ->
+    {ok, Val} = gen_server:call(Name, {level, Level}),
     Val.
 
+value(Level, Name, Spec) ->
+    {ok, Val} = gen_server:call(Name, {spec, Level, Spec}),
+    Val.
+
+options(Name) ->
+    {ok, Options} = gen_serer:call(Name, options),
+    Options.
+                              
 init(Args) ->
     Name = proplists:get_value(name, Args),
     {type, Type} = proplists:lookup(type, Args), %% Does mod need init args?
     Mod = mod_from_type(Type),
     Description = proplists:get_value(description, Args),
-    DisplaySpec =  proplists:get_value(presentation, Args),
     ModState = Mod:new(),
     DoTicks = do_ticks(Mod),
     if DoTicks == true ->
-            %% start a tick
-            timer:send_interval(5000, tick); 
+            timer:send_interval(5000, tick); %% configureable tick interval?
        true ->
             ok
     end,
     {ok, #state{name=Name, mod=Mod, mod_state=ModState,
-                description=Description, presentation=DisplaySpec}}.
+                description=Description}}.
 
-handle_call({value, _}, _From, #state{mod=Mod, mod_state=ModState,
-                                      presentation=undefined, name=Name}=State) ->
-    Stat = Mod:value(Name, ModState),
+handle_call({level, Level}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
+    Stat = Mod:value(Level, Name, ModState),
     {reply, {ok, Stat}, State};
-handle_call({value, undefined}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
-    Stat = Mod:value(Name, ModState),
+handle_call({spec, Level, Spec}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
+    Stat = Mod:value(Level, Spec, Name, ModState),
     {reply, {ok, Stat}, State};
-handle_call({value, Presentation}, _From, #state{mod=Mod, mod_state=ModState,
-                                                 presentation=DisplaySpecs, name=Name}=State) ->
-    Stat = case proplists:get_value(Presentation, DisplaySpecs) of
-               undefined ->
-                   Mod:value(Name, ModState);
-               DisplaySpec ->
-                   Mod:value(DisplaySpec, Name, ModState)
-           end,
-    {reply, {ok, Stat}, State}.
+handle_call(options, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
+    Options = Mod:options(ModState),
+    {reply, {ok, {Name, Options}}, State}.
+
 
 handle_cast({update, Args}, #state{mod=Mod, mod_state=ModState0}=State) ->
     ModState = Mod:update(Args, ModState0),

@@ -22,8 +22,7 @@
 
 -behaviour(riak_core_metric).
 
--export([new/0, value/2, value/3, update/2]).
--export([options/0]).
+-export([new/0, value/3, value/4, update/2, options/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -42,50 +41,37 @@ new() ->
     {ok, H} = basho_metrics_nifs:histogram_new(),
     H.
 
-%% @doc Sum of readings from now to 'window size' seconds ago.
-%%      Returns total number of readings and the sum of those
-%%      readings.
-value(Name, Histo) ->
-    value(0, Name, Histo).
+options(_State) ->
+    ?FIELDS.
 
-value(Level, Name, Histo) when is_integer(Level) ->
-    Fields = {fields, fields(Level)},
-    value([{level, Level}, Fields], Name, Histo);
-
-%% @doc returns the fields of the histogram defined in the
-%%      display spec. Use the 'args' in the display spec
-%%      to produce results.
-%% @see slide:mean_and_nines/6
-value(DisplaySpec, Name,  Histo) ->
-    Fields = proplists:get_value(fields, DisplaySpec, ?FIELDS),
+value(Level, Name, Histo)  ->
+    Fields = fields(Level),
     Stats = basho_metrics_nifs:histogram_stats(Histo),
     display(Name, Fields, Stats, []).
+
+value(_Level, Field, Name,  Histo) ->
+    Stats = basho_metrics_nifs:histogram_stats(Histo),
+    FieldName = riak_core_metric:join_as_atom([Name, '_',  Field]),
+    {FieldName, proplists:get_value(Field, Stats)}.
 
 %% @doc update histogram with Reading for given Moment
 update({Reading, _Moment}, Histo) ->
     ok = basho_metrics_nifs:histogram_update(Histo, Reading),
     Histo.
 
-
 %% @doc produce a proplist containing only specified fields
-display(_Prefix, [], _Stat, Acc) ->
+display(_Name, [], _Stat, Acc) ->
     lists:reverse(Acc);
-display(Prefix, [{Field, Name}|Rest], Stats, Acc) ->
-    Item = {Name, proplists:get_value(Field, Stats)},
-    display(Prefix, Rest, Stats, [Item|Acc]);
-display(Prefix, [Field|Rest], Stats, Acc) ->
-    Name = riak_core_metric:join_as_atom([Prefix, '_',  Field]),
-    Item = {Name, proplists:get_value(Field, Stats)},
-    display(Prefix, Rest, Stats, [Item|Acc]).
+display(Name, [Field|Rest], Stats, Acc) ->
+    FieldName = riak_core_metric:join_as_atom([Name, '_',  Field]),
+    Item = {FieldName, proplists:get_value(Field, Stats)},
+    display(Name, Rest, Stats, [Item|Acc]).
 
 fields(0) ->
     [count];
 fields(1) ->
     [count, min, max, mean];
 fields(_) ->
-    ?FIELDS.
-
-options() ->
     ?FIELDS.
 
 -ifdef(TEST).
@@ -96,8 +82,7 @@ display_test_() ->
              riak_core_metric_histogram:new() end,
      fun(_) -> ok end,
      fun(Histo) ->
-             [?_assertEqual([{histo_count, 0}], riak_core_metric_histogram:value(histo, Histo)),
-              ?_assertEqual([{histo_count, 0}], riak_core_metric_histogram:value(0, histo, Histo)),
+             [?_assertEqual([{histo_count, 0}], riak_core_metric_histogram:value(0, histo, Histo)),
               ?_assertEqual([{histo_count, 0},
                              {histo_min, 0},
                              {histo_max, 0},
@@ -113,7 +98,9 @@ display_test_() ->
                              {histo_stddev,0},
                              {histo_p50,0},
                              {histo_p95,0},
-                             {histo_p99,0}], riak_core_metric_histogram:value(2, histo, Histo))]
+                             {histo_p99,0}], riak_core_metric_histogram:value(2, histo, Histo)),
+             ?_assertEqual({histo_p99, 0}, riak_core_metric_histogram:value(10000, p99, histo, Histo)),
+             ?_assertEqual({histo_nonsuch, undefined}, riak_core_metric_histogram:value(-88888, nonsuch, histo, Histo))]
      end}.
 
 -endif.

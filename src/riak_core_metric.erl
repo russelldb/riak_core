@@ -44,9 +44,10 @@
                                                  riak_core_metric_histogram:display_spec()}]}.
 behaviour_info(callbacks) ->
     [{new, 0},
-     {value, 2},
      {value, 3},
-     {update, 2}
+     {value, 4},
+     {update, 2},
+     {options, 1} %% the display options the stat supports
     ].
 
 %% @doc generate the regsitered name of the stat

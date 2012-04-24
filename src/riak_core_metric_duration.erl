@@ -23,12 +23,11 @@
 -behaviour(riak_core_metric).
 
 %% Behaviour API
--export([new/0, value/2, value/3,  update/2]).
+-export([new/0, value/3, value/4, update/2, options/1]).
 
-%% Public API
--export([start/2, stop/2, cumulative/2]).
-
--export_type([display_spec/0]).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -record(cuml, {count =  0 :: integer(),
                min        :: integer(),
@@ -37,46 +36,17 @@
                last       :: integer(),
                start      :: calendar:t_now()}).
 
--type display() :: [{field(), integer()}].
--type field() :: count | min | max | mean | last | start.
--type display_spec() :: [field()].
-
-%% @doc start timing the duration
--spec start(atom(), atom()) -> ok.
-start(App, Stat) ->
-    riak_core_metric_proc:update(App, Stat, start).
-
-%% @doc stop timing the duration
--spec stop(atom(), atom()) -> ok.
-stop(App, Stat) ->
-    riak_core_metric_proc:update(App, Stat, stop).
-
-%% @doc get display the current value of
-%% the duration Stat. Value is
-%% returned as a proplist
--spec cumulative(atom(), atom()) ->
-                        display().
-cumulative(App, Stat) ->
-    riak_core_metric_proc:value(App, Stat).
-
--spec new() -> #cuml{}.
 new() ->
     #cuml{}.
 
-%% @doc format Dur as a proplist with
-%% default fields count, min, max, mean and last
--spec value(atom(), #cuml{}) ->
-                  display().
-value(Name, Dur) ->
-    display(Name, to_proplist(Dur), [count, min, max, mean, last], []).
+options(_State) ->
+    fields(0).
 
-%% @doc fromat Dur as a proplist
-%% Fields is a list of values to display
-%% picked from count, min, max, mean, last
--spec value(display_spec(), atom(), #cuml{}) ->
-                   display().
-value(Fields, Name, Dur) ->
-    display(Name, to_proplist(Dur), Fields, []).
+value(Level, Name, Dur) ->
+    display(Name, to_proplist(Dur), fields(Level), []).
+
+value(_Level, Field, Name, Dur) ->
+    display(Name, to_proplist(Dur), [Field], []).
 
 -spec update(start, #cuml{}) -> #cuml{};
             (stop, #cuml{}) -> #cuml{}.
@@ -90,8 +60,6 @@ update(stop, #cuml{count=N, min=Min, max=Max, mean=Mean, start=T0}) ->
     #cuml{count=N+1, min=Min2, max=Max2, mean=Mean2, last=Duration, start=undefined}.
 
 %% internal
--spec display(atom(), display(), [field()], display()) ->
-                     display().
 display(_Stat, _Cuml, [], Acc) ->
     lists:reverse(Acc);
 display(Stat, Cuml, [Field|Rest], Acc) ->
@@ -99,6 +67,32 @@ display(Stat, Cuml, [Field|Rest], Acc) ->
     Value = proplists:get_value(Field, Cuml),
     display(Stat, Cuml, Rest, [{Name, Value}|Acc]).
 
--spec to_proplist(#cuml{}) -> display().
 to_proplist(Cuml) when is_record(Cuml, cuml) ->
     lists:zip(record_info(fields, cuml), tl(tuple_to_list(Cuml))).
+
+fields(_) ->
+    [count, min, max, mean, last].
+
+-ifdef(TEST).
+
+display_test_() ->
+    {setup,
+     fun() ->
+             Dur = riak_core_metric_duration:new(),
+             Dur1 = riak_core_metric_duration:update(start, Dur),
+             riak_core_metric_duration:update(stop, Dur1)
+     end,
+     fun(_) ->
+             ok end,
+     fun(Dur) ->
+             [?_assertMatch([{dur_count, _},
+                             {dur_min, _},
+                             {dur_max, _},
+                             {dur_mean, _},
+                             {dur_last, _}], 
+                            riak_core_metric_duration:value(Level, dur, Dur)) || Level <- lists:seq(0, 5)] ++
+                 [?_assertMatch([{dur_count, _}], riak_core_metric_duration:value(0, count, dur, Dur)),
+                  ?_assertEqual([{dur_buffalo, undefined}], riak_core_metric_duration:value(0, buffalo, dur, Dur))]
+     end}.
+
+-endif.

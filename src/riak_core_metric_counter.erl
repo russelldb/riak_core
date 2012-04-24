@@ -22,58 +22,52 @@
 
 -behaviour(riak_core_metric).
 
--export([new/0, value/2, value/3,  update/2]).
+-export([new/0, value/3, value/4,  update/2, options/1]).
 
--export([increment/2, increment/3, decrement/2, decrement/3, total/2]).
-
-%% @doc increments the counter for App named Stat
-%% by Amount.
--spec increment(atom(), atom(), integer()) ->
-                       ok.
-increment(App, Stat, Amount) ->
-    riak_core_metric_proc:update(App, Stat, Amount).
-
-%% @doc increment the counter for App named Stat
-%% by 1.
--spec increment(atom(), atom()) ->
-                       ok.
-increment(App, Stat) ->
-    increment(App, Stat, 1).
-
-%% @doc decrement the counter for App named Stat
-%% by Amount.
--spec decrement(atom(), atom(), integer()) ->
-                       ok.
-decrement(App, Stat, Amount) ->
-    riak_core_metric_proc:update(App, Stat, Amount * -1).
-
-%% @doc decrement the counter for App named Stat
-%% by 1.
--spec decrement(atom(), atom()) -> ok.
-decrement(App, Stat) ->
-    decrement(App, Stat, 1).
-
-%% @doc return the counter for App named Stat's
-%% current value.
--spec total(atom(), atom()) -> non_neg_integer().
-total(App, Stat) ->
-    riak_core_metric_proc:value(App, Stat).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %% Behaviour
 -spec new() -> 0.
 new() ->
     0.
 
--spec value(atom(), non_neg_integer()) ->
-                   {atom(), non_neg_integer()}.
-value(Name, Counter) ->
+options(_State) ->
+    [].
+
+value(_Level, Name, Counter) ->
     {Name, Counter}.
 
--spec value(_, atom(), non_neg_integer()) ->
-                   {atom(), non_neg_integer()}.
-value({display_name, Name}, _StatName, Counter) ->
-    value(Name, Counter).
+value(Level, _Fields, Name, Counter) ->
+    value(Level, Name, Counter).
 
--spec update(integer(), integer()) -> non_neg_integer().
 update(Amount, Counter) when is_integer(Amount) ->
     erlang:max(Counter + Amount, 0).
+
+-ifdef(TEST).
+
+display_test_() ->
+    {setup,
+     fun() -> 
+             riak_core_metric_counter:new() end,
+     fun(_) -> ok end,
+     fun(Counter) ->
+             [?_assertEqual({stat, 0}, 
+                            riak_core_metric_counter:value(Level, stat, Counter)) 
+              || Level <- lists:seq(0, 5)] ++
+                 [?_assertEqual({stat, 0}, riak_core_metric_counter:value(1, anything_at_all, stat, Counter))]
+     end}.
+
+update_test() ->
+    Counter = riak_core_metric_counter:new(),
+    Counter1 = riak_core_metric_counter:update(1, Counter),
+    ?assertEqual({stat, 1}, riak_core_metric_counter:value(0, stat, Counter1)),
+    Counter2 = riak_core_metric_counter:update(999, Counter1),
+    ?assertEqual({stat, 1000}, riak_core_metric_counter:value(0, stat, Counter2)),
+    Counter3 = riak_core_metric_counter:update(-1000, Counter2),
+    ?assertEqual({stat, 0}, riak_core_metric_counter:value(0, stat, Counter3)),
+    Counter4 = riak_core_metric_counter:update(-1000, Counter3),
+    ?assertEqual({stat, 0}, riak_core_metric_counter:value(0, stat, Counter4)).
+                 
+-endif.
