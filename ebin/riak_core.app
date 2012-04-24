@@ -44,7 +44,6 @@
              riak_core_metric_meter,
              riak_core_metric_proc,
              riak_core_metric_sup,
-             riak_core_metric_tmeter,
              riak_core_nodeid,
              riak_core_node_watcher,
              riak_core_node_watcher_events,
