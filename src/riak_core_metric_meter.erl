@@ -43,6 +43,8 @@ options(_Stat) ->
 value(Level, Name, Meter) ->
     [value(Level, Field, Name, Meter) || Field <- fields(Level)].
 
+value(Level, [], Name, Meter) ->
+    value(Level, Name, Meter);
 value(_Level, Field, Name, Meter) ->
     Stats = basho_metrics_nifs:meter_stats(Meter),
     StatName = riak_core_metric:join_as_atom([Name, '_', Field]),
