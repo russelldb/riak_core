@@ -36,7 +36,7 @@ stat_specs() ->
      {rejected_handoffs, [{type, counter}, {group, gossip}]},
      {handoff_timeouts, [{type, counter}, {group, gossip}]},
      {gossip_received, [{type, meter}, {group, gossip}]},
-     {rings_reconciled, [{type, tmeter}, {group, gossip}]},
+     {rings_reconciled, [{type, meter}, {group, gossip}]},
      {converge_delay, [{type, duration}, {group, gossip},
                        {presentation,
                         [{legacy, [min, max, mean, last]}]}]},

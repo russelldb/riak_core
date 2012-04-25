@@ -49,12 +49,12 @@ value(Name, Level) when is_integer(Level) ->
     {ok, Val} = gen_server:call(Name, {level, Level}),
     Val.
 
-value(Level, Name, Spec) ->
+value(Name, Level, Spec) ->
     {ok, Val} = gen_server:call(Name, {spec, Level, Spec}),
     Val.
 
 options(Name) ->
-    {ok, Options} = gen_serer:call(Name, options),
+    {ok, Options} = gen_server:call(Name, options),
     Options.
                               
 init(Args) ->
