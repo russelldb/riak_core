@@ -52,7 +52,7 @@ value(Level, Name, Histo)  ->
 value(_Level, Field, Name,  Histo) ->
     Stats = basho_metrics_nifs:histogram_stats(Histo),
     FieldName = riak_core_metric:join_as_atom([Name, '_',  Field]),
-    [{FieldName, proplists:get_value(Field, Stats)}].
+    {FieldName, proplists:get_value(Field, Stats)}.
 
 %% @doc update histogram with Reading for given Moment
 update({Reading, _Moment}, Histo) ->
@@ -99,8 +99,8 @@ display_test_() ->
                              {histo_p50,0},
                              {histo_p95,0},
                              {histo_p99,0}], riak_core_metric_histogram:value(2, histo, Histo)),
-             ?_assertEqual([{histo_p99, 0}], riak_core_metric_histogram:value(10000, p99, histo, Histo)),
-             ?_assertEqual([{histo_nonsuch, undefined}], riak_core_metric_histogram:value(-88888, nonsuch, histo, Histo))]
+             ?_assertEqual({histo_p99, 0}, riak_core_metric_histogram:value(10000, p99, histo, Histo)),
+             ?_assertEqual({histo_nonsuch, undefined}, riak_core_metric_histogram:value(-88888, nonsuch, histo, Histo))]
      end}.
 
 -endif.

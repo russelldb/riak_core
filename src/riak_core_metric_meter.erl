@@ -43,13 +43,11 @@ options(_Stat) ->
 value(Level, Name, Meter) ->
     [value(Level, Field, Name, Meter) || Field <- fields(Level)].
 
-value(Level, [], Name, Meter) ->
-    value(Level, Name, Meter);
 value(_Level, Field, Name, Meter) ->
     Stats = basho_metrics_nifs:meter_stats(Meter),
     StatName = riak_core_metric:join_as_atom([Name, '_', Field]),
     Stat = proplists:get_value(Field, Stats),
-    {StatName, trunc(Stat)}.
+    {StatName, safe_trunc(Stat)}.
 
 update({Amount, _Moment}, Meter) ->
     ok = basho_metrics_nifs:meter_update(Meter, Amount),
@@ -62,6 +60,11 @@ fields(0) ->
     [count, one];
 fields(Level) when is_integer(Level) ->
     options(ok).
+
+safe_trunc(N) when is_number(N) ->
+    trunc(N);
+safe_trunc(Else) ->
+    Else.
 
 -ifdef(TEST).
 
