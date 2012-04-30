@@ -29,19 +29,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([stat_specs/0]).
-
--type stat_specs() ::  [stat()].
-
--type stat() :: {Name :: atom(),
-                 Args :: [type() | group() | presentation()]
-                }.
-
--type type() :: {type, counter | meter | histogram | duration}.
--type group() :: {group, GroupName::atom()}.
--type presentation() :: {presentation, [{Name :: atom(),
-                                         Spec :: riak_core_metric_duration:display_spec() |
-                                                 riak_core_metric_histogram:display_spec()}]}.
 behaviour_info(callbacks) ->
     [{new, 0},
      {value, 3},

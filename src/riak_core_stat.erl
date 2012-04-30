@@ -26,6 +26,7 @@
 %% Metrics API
 -export([stat_specs/0]).
 
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -37,21 +38,22 @@ stat_specs() ->
      {handoff_timeouts, [{type, counter}, {group, gossip}]},
      {gossip_received, [{type, meter}, {group, gossip}]},
      {rings_reconciled, [{type, meter}, {group, gossip}]},
-     {converge_delay, [{type, duration}, {group, gossip},
-                       {presentation,
-                        [{legacy, [min, max, mean, last]}]}]},
-     {rebalance_delay, [{type, duration}, {group, gossip},
-                        {presentation,
-                         [{legacy, [min, max, mean, last]}]}]}
+     {converge_delay, [{type, duration}, {group, gossip}]},
+     {rebalance_delay, [{type, duration}, {group, gossip}]},
+     {vnode_queue, [{type, vnodeq}, {group, vnodeq}]},
+     {host, [{type, host}, {group, system}]},
+     {erl, [{type, erl}, {group, system}]},
+     {ring, [{type, ring}, {group, system}]},
+     {env, [{type, env}, {group, system}]}
     ].
 
 %% @spec get_stats() -> proplist()
 %% @doc Get the current aggregation of stats.
 get_stats() ->
-    produce_stats(legacy).
+    produce_stats(5).
 
 get_stats(_Moment) ->
-    produce_stats(legacy).
+    produce_stats(5).
 
 %% @doc Update the given stat
 -spec update(Stat::atom()) -> ok.
@@ -82,100 +84,15 @@ update(_) ->
 %% @spec produce_stats(Presentation : atom()) -> proplist()
 %% @doc Produce a proplist-formatted view of the current aggregation
 %%      of stats.
-produce_stats(Presentation) ->
-    lists:append([gossip_stats(Presentation),
+produce_stats(Level) ->
+    lists:append([gossip_stats(Level),
                   vnodeq_stats()]).
 
 %% @spec gossip_stats(integer()) -> proplist()
 %% @doc Get the gossip stats proplist.
-gossip_stats(Presentation) ->
-    GossipStats = [riak_core_metric_proc:value(Name, Presentation) || {Name, Spec} <- stat_specs(), lists:keyfind(gossip, 2, Spec) /= false],
+gossip_stats(Level) ->
+    GossipStats = [riak_core_metric_proc:value(Name, Level) || {Name, Spec} <- stat_specs(), lists:keyfind(gossip, 2, Spec) /= false],
     lists:flatten( GossipStats ).
 
-%% Provide aggregate stats for vnode queues.  Compute instantaneously for now,
-%% may need to cache if stats are called heavily (multiple times per seconds)
 vnodeq_stats() ->
-    VnodesInfo = [{Service, element(2, erlang:process_info(Pid, message_queue_len))} ||
-                     {Service, _Index, Pid} <- riak_core_vnode_manager:all_vnodes()],
-    ServiceInfo = lists:foldl(fun({S,MQL}, A) ->
-                                      orddict:append_list(S, [MQL], A)
-                              end, orddict:new(), VnodesInfo),
-    lists:flatten([vnodeq_aggregate(S, MQLs) || {S, MQLs} <- ServiceInfo]).
-
-vnodeq_aggregate(_Service, []) ->
-    []; % no vnodes, no stats
-vnodeq_aggregate(Service, MQLs0) ->
-    MQLs = lists:sort(MQLs0),
-    Len = length(MQLs),
-    Total = lists:sum(MQLs),
-    Mean = Total div Len,
-    Median = case (Len rem 2) of
-                 0 -> % even number, average middle two
-                     (lists:nth(Len div 2, MQLs) +
-                      lists:nth(Len div 2 + 1, MQLs)) div 2;
-                 1 ->
-                     lists:nth(Len div 2 + 1, MQLs)
-             end,
-    [{vnodeq_atom(Service, <<"s_running">>), Len},
-     {vnodeq_atom(Service, <<"q_min">>), lists:nth(1, MQLs)},
-     {vnodeq_atom(Service, <<"q_median">>), Median},
-     {vnodeq_atom(Service, <<"q_mean">>), Mean},
-     {vnodeq_atom(Service, <<"q_max">>), lists:nth(Len, MQLs)},
-     {vnodeq_atom(Service, <<"q_total">>), Total}].
-
-vnodeq_atom(Service, Desc) ->
-    binary_to_atom(<<(atom_to_binary(Service, latin1))/binary, Desc/binary>>, latin1).
-
-
--ifdef(TEST).
-
-%% Check vnodeq aggregation function
-vnodeq_aggregate_empty_test() ->
-    ?assertEqual([], vnodeq_aggregate(service_vnode, [])).
-
-vnodeq_aggregate_odd1_test() ->
-    ?assertEqual([{service_vnodes_running, 1},
-                  {service_vnodeq_min, 10},
-                  {service_vnodeq_median, 10},
-                  {service_vnodeq_mean, 10},
-                  {service_vnodeq_max, 10},
-                  {service_vnodeq_total, 10}],
-                 vnodeq_aggregate(service_vnode, [10])).
-
-vnodeq_aggregate_odd3_test() ->
-    ?assertEqual([{service_vnodes_running, 3},
-                  {service_vnodeq_min, 1},
-                  {service_vnodeq_median, 2},
-                  {service_vnodeq_mean, 2},
-                  {service_vnodeq_max, 3},
-                  {service_vnodeq_total, 6}],
-                 vnodeq_aggregate(service_vnode, [1, 2, 3])).
-
-vnodeq_aggregate_odd5_test() ->
-    ?assertEqual([{service_vnodes_running, 5},
-                  {service_vnodeq_min, 0},
-                  {service_vnodeq_median, 1},
-                  {service_vnodeq_mean, 2},
-                  {service_vnodeq_max, 5},
-                  {service_vnodeq_total, 10}],
-                 vnodeq_aggregate(service_vnode, [1, 0, 5, 0, 4])).
-
-vnodeq_aggregate_even2_test() ->
-    ?assertEqual([{service_vnodes_running, 2},
-                  {service_vnodeq_min, 10},
-                  {service_vnodeq_median, 15},
-                  {service_vnodeq_mean, 15},
-                  {service_vnodeq_max, 20},
-                  {service_vnodeq_total, 30}],
-                 vnodeq_aggregate(service_vnode, [10, 20])).
-
-vnodeq_aggregate_even4_test() ->
-    ?assertEqual([{service_vnodes_running, 4},
-                  {service_vnodeq_min, 0},
-                  {service_vnodeq_median, 5},
-                  {service_vnodeq_mean, 7},
-                  {service_vnodeq_max, 20},
-                  {service_vnodeq_total, 30}],
-                 vnodeq_aggregate(service_vnode, [0, 10, 0, 20])).
-
--endif.
+    riak_core_metric_proc:value(vnode_queue, 3).

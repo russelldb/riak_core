@@ -30,7 +30,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {name, mod, mod_state, description}).
+-record(state, {name, mod, mod_state, description, level}).
 
 %%%===================================================================
 %%% API
@@ -62,6 +62,7 @@ init(Args) ->
     {type, Type} = proplists:lookup(type, Args), %% Does mod need init args?
     Mod = mod_from_type(Type),
     Description = proplists:get_value(description, Args),
+    Level = proplists:get_value(level, Args, 0),
     ModState = Mod:new(),
     DoTicks = do_ticks(Mod),
     if DoTicks == true ->
@@ -70,10 +71,13 @@ init(Args) ->
             ok
     end,
     {ok, #state{name=Name, mod=Mod, mod_state=ModState,
-                description=Description}}.
+                description=Description, level=Level}}.
 
-handle_call({level, Level}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
-    Stat = Mod:value(Level, Name, ModState),
+handle_call({level, Level}, _From, #state{mod=Mod, mod_state=ModState, name=Name, level=ActiveLevel}=State) ->
+    Stat = if Level >= ActiveLevel ->
+                   Mod:value(Level, Name, ModState);
+              true -> []
+           end,
     {reply, {ok, Stat}, State};
 handle_call({spec, Level, Spec}, _From, #state{mod=Mod, mod_state=ModState, name=Name}=State) ->
     Stat = Mod:value(Level, Spec, Name, ModState),

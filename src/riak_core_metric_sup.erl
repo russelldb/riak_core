@@ -68,7 +68,8 @@ mod_refs(App, Mod) ->
     [stat_ref(App, Stat, Args) || {Stat, Args} <- Stats].
 
 stat_ref(App, Stat, Args) ->
-    {{App, Stat}, {riak_core_metric_proc, start_link, [Stat, Args]},
+    Group = proplists:get_value(group, Args),
+    {{App, Stat, Group}, {riak_core_metric_proc, start_link, [Stat, Args]},
      permanent, 5000, worker, [riak_core_metric_proc]}.
 
 remove_slide_private_dirs() ->
