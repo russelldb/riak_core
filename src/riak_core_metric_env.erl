@@ -36,7 +36,8 @@ update(_Arg, env) ->
 value(Level, _Name, env) when Level < 3 ->
     [];
 value(_Level, _Name, env) ->
-    [{App, [E || E <- app_helper:get_env(App)]} || {App, _Mod} <- [{riak_core, vnode}|riak_core:vnode_modules()]].
+    [{riak_core_metric:join_as_atom([App, '_', env]), 
+      [E || E <- app_helper:get_env(App)]} || {App, _Mod} <- [{riak_core, vnode}|riak_core:vnode_modules()]].
 
 value(_Level, App, _Name, env) when is_atom(App)->
     app_helper:get_env(App);

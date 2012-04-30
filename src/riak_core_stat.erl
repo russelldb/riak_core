@@ -23,6 +23,9 @@
 %% API
 -export([get_stats/0, get_stats/1, update/1]).
 
+%% query API
+-export([list_stats/0, stats/1, stats/2, stats/3, stat/2, stat/3]).
+
 %% Metrics API
 -export([stat_specs/0]).
 
@@ -47,13 +50,54 @@ stat_specs() ->
      {env, [{type, env}, {group, system}]}
     ].
 
+%%%
+list_stats() ->
+    AppDict = lists:foldl(fun({{App, Stat, Group}, Pid, _, _}, AccIn) ->
+                                  {ok, {Stat, _Opts}=Options} = gen_server:call(Pid, options),
+                                  case lists:keyfind(App, 1, AccIn) of
+                                      false ->
+                                          [{App, [{Group, [Options]}]}|AccIn];
+                                      {App, Groups} ->
+                                          case lists:keyfind(Group, 1, Groups) of
+                                              false ->
+                                                  lists:keyreplace(App, 1, AccIn, {App, [{Group, [Options]}|Groups]});
+                                              {Group, Stats} ->
+                                                  Groups2 = lists:keyreplace(Group, 1, Groups, {Group, [Options|Stats]}),
+                                                  lists:keyreplace(App, 1, AccIn, {App, Groups2})
+                                          end
+                                  end
+                          end,
+                          [],
+                          supervisor:which_children(riak_core_metric_sup)),
+    orddict:to_list(AppDict).
+
+stats(Level) when is_integer(Level) ->
+    lists:flatten([riak_core_metric_proc:value(Name, Level) || {{_App, Name, _Group}, _, _, _} <-
+                                                                    supervisor:which_children(riak_core_metric_sup)]).
+
+stats(App, Level) ->
+    lists:flatten([riak_core_metric_proc:value(Name, Level) || {{StatApp, Name, _Group}, _, _, _} <-
+                                                                    supervisor:which_children(riak_core_metric_sup),
+                  App =:= StatApp]).
+
+stats(App, Group, Level) ->
+    lists:flatten([riak_core_metric_proc:value(Name, Level) || {{StatApp, Name, StatGroup}, _, _, _} <-
+                                                                    supervisor:which_children(riak_core_metric_sup),
+                  App =:= StatApp, Group =:= StatGroup]).
+
+stat(Name, Level) ->
+    riak_core_metric_proc:value(Name, Level).
+
+stat(Name, Level, Spec) ->
+    riak_core_metric_proc:value(Name, Level, Spec).
+
 %% @spec get_stats() -> proplist()
 %% @doc Get the current aggregation of stats.
 get_stats() ->
     produce_stats(5).
 
-get_stats(_Moment) ->
-    produce_stats(5).
+get_stats(Level) ->
+    produce_stats(Level).
 
 %% @doc Update the given stat
 -spec update(Stat::atom()) -> ok.
@@ -85,14 +129,4 @@ update(_) ->
 %% @doc Produce a proplist-formatted view of the current aggregation
 %%      of stats.
 produce_stats(Level) ->
-    lists:append([gossip_stats(Level),
-                  vnodeq_stats()]).
-
-%% @spec gossip_stats(integer()) -> proplist()
-%% @doc Get the gossip stats proplist.
-gossip_stats(Level) ->
-    GossipStats = [riak_core_metric_proc:value(Name, Level) || {Name, Spec} <- stat_specs(), lists:keyfind(gossip, 2, Spec) /= false],
-    lists:flatten( GossipStats ).
-
-vnodeq_stats() ->
-    riak_core_metric_proc:value(vnode_queue, 3).
+    lists:flatten([ riak_core_metric_proc:value(Name, Level) || {Name, _} <- stat_specs() ]).
