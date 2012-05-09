@@ -71,6 +71,7 @@ init([]) ->
                   ?CHILD(riak_core_vnode_manager, worker),
                   ?CHILD(riak_core_gossip, worker),
                   ?CHILD(riak_core_metric_sup, supervisor, [riak_core, riak_core_stat], 5000),
+                  ?CHILD(riak_core_metrics, worker),
                   RiakWebs
                  ]),
 

@@ -49,6 +49,7 @@
              riak_core_metric_ring,
              riak_core_metric_sup,
              riak_core_metric_vnodeq,
+             riak_core_metrics,
              riak_core_nodeid,
              riak_core_node_watcher,
              riak_core_node_watcher_events,

@@ -30,7 +30,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {name, mod, mod_state, description, level}).
+-record(state, {name, mod, mod_state, description, level, display_name}).
 
 %%%===================================================================
 %%% API
@@ -49,10 +49,11 @@ value(Name, Level) when is_integer(Level) ->
     {ok, Val} = gen_server:call(Name, {level, Level}),
     Val.
 
-value(Name, Level, Spec) ->
+value(Name, Level, Spec) when is_integer(Level) ->
     {ok, Val} = gen_server:call(Name, {spec, Level, Spec}),
     Val.
 
+%% all display drill down options for this stat
 options(Name) ->
     {ok, Options} = gen_server:call(Name, options),
     Options.
@@ -118,3 +119,4 @@ do_ticks(Mod) ->
         _ ->
             false
     end.
+
