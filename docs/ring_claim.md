@@ -168,7 +168,11 @@ This, in this case will provide for a more even distribution of coverage plans a
 
 ### Joining through cluster plans
 
-Within Riak the joining, leaving and transferring of  nodes may happen one node at a time, or may be requested in bulk.  
+Within Riak the joining, leaving and transferring of nodes may happen one node at a time, or may be requested in bulk.  So any algorithm must be able to cope with both scenarios.  
+
+The bulk join can of course could always be treated as a series of one-at-a-time changes (although note that in Riak this isn't strictly the case).  
+
+It may also be considered that clusters generally have two states: with less nodes than target_n_val; with a node count greater than or equal to target_n_val.  Also transitioning between these states is a special case - so adding a node or set of nodes to prompt the transition needs to be optimised to create an initially balanced ring, and node additions beyond that transition should be optimised so as not to spoil the balance of the ring.
 
 ### Further spacing
 
@@ -177,7 +181,7 @@ Within Riak the joining, leaving and transferring of  nodes may happen one node 
 In this scenario if two nodes were to fail (node 1 and node 2), the fallbacks elected would be split across the nodes so that the proportional activity on the remaining nodes will be:
 
 - node 3 - 27.1%
-- node 4 - 20.1%
+- node 4 - 20.8%
 - node 5 - 14.6%
 - node 6 - 12.5%
 - node 7 - 12.5%
@@ -189,5 +193,58 @@ So ideally the spacing between partitions for a node should not just be `target_
 
 ## Riak and Upholding Claim properties
 
+There are two non-deprecated claim algorithms in use in Riak today, the default (version 2), and a proposed alternative (version 3).  Both algorithms are "proven" through some property-based tests, which check for randomly chosen scenarios that properties should be upheld.
+
+The properties verified are:
+- The target_n_val is upheld, no node owns two partitions within the default target_n_val when the number of nodes is at least the target_n_val;
+- No over-claiming, no transition leaves one node with less than ring_size div node_count partitions
+- All partitions are assigned;
+- No nodes with no claim are assigned any nodes.
+
+However there are two significant issues with this property based testing:
+- It assumes one node is added at a time, it does not test for bulk adding of nodes, in particular that bulk-adding which may occur when the cluster is first set-up (e.g. to transition from 1 node to 5 nodes);
+- The list of properties is incomplete - no over-claiming does not prove balance, and there is no testing of balanced coverage plans, optimisation of spacing and minimisation of transition changes.
+
+### Bulk node additions - an example
+
+The property testing code, tests adding multiple nodes, by adding them one node at a time, and then calling the choose_claim function after each addition.  The actual code works in a subtly different way - this adds all the nodes at once, and then loops over all the added nodes calling the choose_claim function each time.
+
+If we look at a cluster which has a ring-size of 32, and is being expanded from 1 nodes to 5 nodes.  the property testing will add one node at a time, and the call choose_claim_v2 every time a node has been added.  Prior to the target_n_val being reached, the result of these iterations is irrelevant.  When the fourth node is added, the ring_size is now divisible by target_n_val - and then end outcome of that iteration will always be something of the form (regardless of how this is determined):
+
+``| n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 |``
+
+The next node add will select nodes to transition to node 5 in such a way so as not to spoil the meeting of the target_n_val - and the final case clause in choose_claim_v2 will be reached with
+
+``{RingChanged, EnoughNodes, RingMeetsTargetN} = {true, true, true}``
+
+The modified ring which meets the target_n_val will then be used.  However, in order to select the indices for node 5, the algorithm will select from node 1, then node 2, then node 3 and then node 4 - moving between these lists when the remaining indexes on the list are at 6 partitions (ring_size div node_count).  The algorithm will continue until the wants of node 5 have been satisfied (it wants 6 partitions).  However the effect of this algorithm is that it will take 2 nodes from node 1, 2 from node 2 and 32 nodes from node 3 - and at this stage it will stop taking nodes as the wants have been satisfied (and so no nodes will be taken from node 4).  The end outcome is a partition list like this:
+
+``| n5 | n2 | n3 | n4 | n5 | n2 | n3 | n4 | n1 | n5 | n3 | n4 | n1 | n5 | n3 | n4 | n1 | n2 | n5 | n4 | n1 | n2 | n5 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 |``
+
+This meets the target_n_val, but is unbalanced as the partitions are split between the nodes as follows:
+
+- Node 1 - 6 partitions - 18.75%
+- Node 2 - 6 partitions - 18.75%
+- Node 3 - 6 partitions - 18.75%
+- Node 4 - 8 partitions - 25.00%
+- Node 5 - 6 partitions - 18.75%
+
+So node 4 has 33.3% more partitions than any other node.
+
+Of greater concern is that if we were to follow standard process for building a cluster, of setting up five nodes, and then running a cluster plan to join four of the nodes to the first - this approach is different to the one in the test.
+
+In this scenario, the five nodes will be added to the ring, and choose_claim_v2 will be run four times, once for each joining node.  
+
+this time, on the third loop, which adds the fourth node - the outcome of the algorithm will be:
+
+``{RingChanged, EnoughNodes, RingMeetsTargetN} = {true, true, false}``
+
+and this will prompt claim_rebalance_n/2 to be the output of the loop.  However, unlike in the test scenario the Ring passed to claim_rebalance_n will have all five nodes, not just the first four nodes.  So claim_rebalance_n will in this case output a simple striping of the partitions across the five nodes <b>with tail violations</b>:
+
+``| n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 |``
+
+The function will then be called for a firth time.  However, node 5 has in this breaking ring all its wants satisfied - so the algorithm will not make any ring changes.  Consequently `RingChangedM = false` at the final case clause, and claim_rebalance_n will be called.  As claim_rebalance_n doesn't resolve tail violations, whis will produce the equivalent result as per the previous iteration (with the nodes possibly in a different order).
+
+So the end outcome of transitioning from 1 node to 5 nodes in a real cluster will not meet the property of upholding a target_n_val, although the property test will always claim this is upheld.
 
 ## Riak and Proposed Claim Improvements
