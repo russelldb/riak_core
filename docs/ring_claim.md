@@ -34,9 +34,9 @@ There are some properties of this claiming process which are required, and are l
 - vnodes at the tail of the partition list, should not be mapped to the same physical nodes as vnodes at the front of the partition list (i.e. the above property must hold as the tail wraps around to the start);
 - there should be an even distribution of vnodes across the physical nodes;
 - transitions from one cluster state to another should minimise the number of transfers required;
-- the failure of any physical node should lead to an even distribution of fallback nodes across the remaining physical nodes;
 - all coverage plans should be evenly spread across the physical nodes (so that expensive queries don't cause a subset of slow nodes);
-- the above properties should be upheld if nodes are added one-by-one, or joined in bulk.
+- the above properties should be upheld if nodes are added one-by-one, or joined in bulk;
+- vnodes should be generally be spaced as a far as possible, not just minimally.
 
 Each of these properties will be examined in turn, and the explanation of those properties will hint at both how Riak may fail to meet some of these properties, and how that failure could be resolved.  The specific problems in Riak and the proposed solution will be explained in a later section.
 
@@ -100,14 +100,92 @@ to
 
 would leave each node having either 5 or 6 vnodes, leave the spacing constraints in space, would require only <b>5</b> transfers without any specific scheduling of the transfers to maintain safety guarantees.
 
-### Even distribution of fallbacks
-
-
 ### Balanced coverage plans
 
+In a six node cluster, with an even distribution of partitions of sequence, and tail wrap-around resolved - we have a ring arrangement like this:
+
+``| n1 | n2 | n3 | n5 | n6 | n1 | n2 | n4 | n5 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 |``
+
+The coverage plans will hit nodes as such:
+
+Plan 1
+- node 1 - 1
+- node 2 - 1
+- node 3 - 4
+- node 4 - 0
+- node 5 - 1
+- node 6 - 4
+
+Plan 2
+- node 1 - 4
+- node 2 - 1
+- node 3 - 0
+- node 4 - 5
+- node 5 - 0
+- node 6 - 1
+
+Plan 3
+- node 1 - 1
+- node 2 - 4
+- node 3 - 2
+- node 4 - 0
+- node 5 - 4
+- node 6 - 0
+
+The unbalanced coverage plans will lead to unbalanced resource pressure sin the cluster, and in cases of long-running queries issues with multiple 'slow' nodes.
+
+If when sequencing we divide the nodes into blocks of three, with a remainder.  If then we allow the first node in each sequence to roll up and down the three nodes by one place at a time (except for the remainder at the tail of the sequence), we would have an alternative distribution:
+
+``| n1 | n2 | n3 | n5 | n6 | n2 | n1 | n5 | n4 | n6 | n2 | n3 | n1 | n5 | n6 | n4 | n2 | n1 | n3 | n5 | n4 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 |``
+
+The coverage plans will hit nodes as such:
+
+Plan 1
+- node 1 - 3
+- node 2 - 0
+- node 3 - 3
+- node 4 - 1
+- node 5 - 1
+- node 6 - 3
+
+Plan 2
+- node 1 - 2
+- node 2 - 3
+- node 3 - 0
+- node 4 - 2
+- node 5 - 3
+- node 6 - 1
+
+Plan 3
+- node 1 - 1
+- node 2 - 3
+- node 3 - 3
+- node 4 - 2
+- node 5 - 1
+- node 6 - 1
+
+This, in this case will provide for a more even distribution of coverage plans across nodes.  However, this is really only a problem where the number of nodes is a factor of three.  Even in the multiple of three case, although the coverage plans are individually unbalanced, they are collectively balanced - across multiple queries the load is still split across the cluster.  This perhaps is not necessarily a huge issue.
 
 ### Joining through cluster plans
 
+Within Riak the joining, leaving and transferring of  nodes may happen one node at a time, or may be requested in bulk.  
+
+### Further spacing
+
+``| n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n5 | n6 | n7 | n8 | n5 | n6 | n7 | n8 | n5 | n6 | n7 | n8 | n5 | n6 | n7 | n8 ``
+
+In this scenario if two nodes were to fail (node 1 and node 2), the fallbacks elected would be split across the nodes so that the proportional activity on the remaining nodes will be:
+
+- node 3 - 27.1%
+- node 4 - 20.1%
+- node 5 - 14.6%
+- node 6 - 12.5%
+- node 7 - 12.5%
+- node 8 - 12.5%
+
+So with this arrangement, a clearly sub-optimal scenario is created on two node failures - as multiple preflists lost node diversity (i.e. they had fallbacks elected that were not on physically diverse nodes to surviving primaries), and there is a significant bias of load towards one particular node.
+
+So ideally the spacing between partitions for a node should not just be `target_n_val` but further if possible.
 
 ## Riak and Upholding Claim properties
 
