@@ -227,9 +227,9 @@ However there are two significant issues with this property based testing:
 
 The ring is an Erlang record which can be passed around, until it is finalised and then gossiped to seek agreement for the completed transition.  A new node becomes a member of the ring when it is added to the record, but is only assigned partitions in the record when the ring and the node are passed to [choose_claim_v2](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L271).  
 
-If we look at a cluster which has a ring-size of 32, and is being expanded from 1 nodes to 5 nodes.  The property testing will add one node at a time, and the call [choose_claim_v2](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L271) every time a node has been added.  Prior to the target_n_val being reached, the result of these iterations is irrelevant.  
+If we look at a cluster which has a ring-size of 32, and is being expanded from 1 nodes to 5 nodes.  The property testing will add one node at a time to the ring record, and the call [choose_claim_v2](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L271) every time a node has been added.  
 
-When the fourth node is added, the ring_size is now divisible by target_n_val - and then end outcome of that iteration will always be something of the form (regardless of how this is determined):
+Prior to the target_n_val being reached, the result of these iterations is irrelevant.  When the fourth node is added, the ring_size is now divisible by target_n_val - and then end outcome of that iteration will always be something of the form (regardless of how this is determined):
 
 ``| n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 | n1 | n2 | n3 | n4 |``
 
