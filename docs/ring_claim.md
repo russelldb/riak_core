@@ -225,7 +225,7 @@ However there are two significant issues with this property based testing:
 
 ### An example - Building a 5 node Cluster
 
-The property testing code, tests adding multiple nodes, by adding them one node at a time, and then calling the choose_claim function after each addition.  The actual code works in a subtly different way - this adds all the nodes at once, and then loops over all the added nodes calling the choose_claim function each time.
+The ring is an Erlang record which can be passed around, until it is finalised and then gossiped to seek agreement for the completed transition.  A new node becomes a member of the ring when it is added to the record, but is only assigned partitions in the record when the ring and the node are passed to [choose_claim_v2](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L271).  
 
 If we look at a cluster which has a ring-size of 32, and is being expanded from 1 nodes to 5 nodes.  The property testing will add one node at a time, and the call [choose_claim_v2](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L271) every time a node has been added.  Prior to the target_n_val being reached, the result of these iterations is irrelevant.  
 
@@ -255,13 +255,15 @@ This meets the target_n_val, but is unbalanced as the partitions are split betwe
 
 So node 4 has 33.3% more partitions than any other node.
 
-If as a user of Riak we build a 5 node cluster by adding one node at a time, the cluster will be built as tested in the property test - but this outcome violates a basic desirable property of ring claiming, that it results in an even distribution of nodes, and in particular it does not isolate "one slow node" by focusing additional work in one location.
+If as a user of Riak we build a 5 node cluster by adding one node at a time, the cluster will be built as tested in the property test - but this outcome violates a basic desirable property of ring-claiming, that it results in an even distribution of nodes.  The outcome isolates "one slow node" by focusing relatively-significant additional work in one location.
 
-Although this is the tested scenario, this is not normally how 5 node clusters are built.  Normally, a user would setup five unclustered nodes, and then running a cluster plan to join four of the nodes to the first.  The code path for this approach is subtly different to the tested scenario.
+Although this is the tested scenario, this is not normally how 5 node clusters are built.  Normally, a user would setup five unclustered nodes, and then running a cluster plan to join four of the nodes to the first.  
 
-In this scenario, the five nodes will be added to the ring, and choose_claim_v2 will be run four times, once for each joining node.  
+Although the property testing code, tests adding multiple nodes by adding them one node at a time to the ring, and then calling the choose_claim function after each addition, the actual code called during cluster planning works in a subtly different way.  The actual process adds all the nodes to be added as members to the ring first, and then the code loops over all the added nodes calling the choose_claim function each time.  So both the test code and real code loop over choose_claim for each added vnode, but in the test code there are no to-be added members on the ring when choose_claim is called each time, whereas in cluster planning all new nodes are added to the ring before the first call of choose_claim.  
 
-This time, on the third loop, which adds the fourth node - the outcome of the algorithm will generally be:
+There is a subtle difference between the process of adding one node in one plan and adding multiple nodes in one plan, and the property-based testing only confirms safe operation in the first case.
+
+In the real-world cluster-planning scenario, the five nodes will be added to the ring, and choose_claim_v2 will be run four times, once for each joining node.  On the third loop, which adds the fourth node - the outcome of the algorithm will generally be:
 
 ``{RingChanged, EnoughNodes, RingMeetsTargetN} = {true, true, false}``
 
@@ -273,7 +275,7 @@ So claim_rebalance_n will in this case output a simple striping of the partition
 
 ``| n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 |``
 
-The function choose_claim_v2 will then be called for a fifth time, for the fifth node.  However, node 5 has in this breaking ring all its wants satisfied - so the algorithm will [not make any ring changes](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L324-L329).  Consequently `RingChangedM = false` at the final case clause, and claim_rebalance_n will be called.  The inputs to claim_rebalance_n are unchanged - and so this will produce the same result <b>with tail violations</b>.
+The function choose_claim_v2 will then be called for a fifth time, for the fifth node.  However, node 5 has in this breaking ring all its wants satisfied - so the algorithm will [not make any ring changes](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L324-L329).  Consequently `RingChangedM = false` at the final case clause, and claim_rebalance_n will be called.  The inputs to claim_rebalance_n are unchanged - and so this will produce the same result <b>with tail violations</b>.  
 
 So the end outcome of transitioning from 1 node to 5 nodes in a real cluster will not meet the property of upholding a target_n_val, although the property test will always claim this is upheld.
 
