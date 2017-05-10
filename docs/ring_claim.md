@@ -209,7 +209,7 @@ So with this arrangement, a clearly sub-optimal scenario is created on two node 
 
 So ideally the spacing between partitions for a node should not just be `target_n_val` but further if possible.
 
-## Riak and Upholding Claim properties
+## Riak Claim v2 and Upholding Claim properties
 
 There are two non-deprecated claim algorithms in use in Riak today, the default (version 2), and a proposed alternative (version 3).  Both algorithms are "proven" through some property-based tests, which check for randomly chosen scenarios that properties should be upheld.
 
@@ -223,7 +223,7 @@ However there are two significant issues with this property based testing:
 - It assumes one node is added at a time, it does not test for bulk adding of nodes, in particular that bulk-adding which may occur when the cluster is first set-up (e.g. to transition from 1 node to 5 nodes);
 - The list of properties is incomplete - no over-claiming does not prove balanced distribution, and there is no testing of balanced coverage plans, optimisation of spacing and minimisation of transition changes.
 
-### Bulk node additions - an example
+### An example - Building a 5 node Cluster
 
 The property testing code, tests adding multiple nodes, by adding them one node at a time, and then calling the choose_claim function after each addition.  The actual code works in a subtly different way - this adds all the nodes at once, and then loops over all the added nodes calling the choose_claim function each time.
 
@@ -267,7 +267,7 @@ This time, on the third loop, which adds the fourth node - the outcome of the al
 
 There is nothing about the picking algorithm used within choose_claim_v2 which will cause a cluster without enough nodes to transition to a cluster which meets `target_n_val` when the target_n_val node is added.
 
-This state will prompt claim_rebalance_n/2 to be the [output of the loop](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L337).  However, unlike in the test scenario the Ring passed to claim_rebalance_n will have all five nodes, not just the first four nodes.  The claim_rebalance_n function looks [at the members](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L501) that have joined the ring (which is all five due to the cluster plan process, not just the four that have been used for iterations through choose_claim_v2).
+This state will prompt claim_rebalance_n/2 to be the [output of the loop](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L337).  However, unlike in the test scenario the Ring passed to claim_rebalance_n will have all five nodes, not just the first four nodes - as with the cluster plan the ring had all the nodes added in-advance, not just prior to each individual call to choose_claim_v2.  The claim_rebalance_n function looks [at the members](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L501) that have joined the ring (which is all five due to the cluster plan process, not just the four that have been used for iterations through choose_claim_v2).
 
 So claim_rebalance_n will in this case output a simple striping of the partitions across the five nodes <b>with tail violations</b>:
 
@@ -281,6 +281,10 @@ There is therefore no obvious and direct way to create a 5 node cluster in Riak 
 
 Note, that a 5-node cluster is not an unusual exception.  There are multiple potential cases for unexpected outcomes.
 
-### Claim v3 - A Review
+## Riak Claim v3 and Upholding Claim properties
+
 
 ## Riak and Proposed Claim Improvements
+
+
+## Future Thinking - Availability Zones
