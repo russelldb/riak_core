@@ -16,13 +16,15 @@ At design time of a Riak cluster, it is necessary to set the [size of the ring](
 
 The size of the ring simply defines the number of separate (and equal) partitions of the hash space there will be.  Each Bucket/Key combination will be hashed before storage, and hashed before fetching, and the outcome of that consistent hashing algorithm will determine the partition to which that Bucket/Key pair belongs.  Each partition has an ID, which is the floor hash value for that partition: to belong to a partition a Bucket/Key pair must hash to a value which is greater than the floor, and less than or equal to the floor of the next partition.  The "first" partition is ID 0, but this is only the first in the sense it has the lowest Partition ID - it has no special role in the ring.
 
-Within a Riak cluster there are individual databases known as vnodes, where each vnode is associated with a single Partition ID.  The more partitions, the easier it is to spread load smoothly throughout larger and larger clusters.  The less partitions, the lower the overhead of running all the vnodes necessary to support each partition.  As the node count increases, so does the optimal number of vnodes.
+Within a Riak cluster there are individual databases known as vnodes, where each vnode is associated with a single Partition ID.  The more partitions, the easier it is to spread load smoothly throughout larger and larger clusters.  The fewer partitions, the lower the overhead of running all the vnodes necessary to support each partition.  As the node count increases, so does the optimal number of vnodes.
 
 Every bucket within Riak has an n-val which indicates how many vnodes each value should normally be stored in, and retrieved from.  When a key is to be stored or retrieved the Bucket/Key is hashed and then the operation will be performed against the vnode  with the Partition ID which the Key hashes to, plus the next n-1 vnodes in numerical order of Partition ID.  If one of these vnodes is known to be unavailable at commencement of the operation (Riak will gossip the status of vnodes around the cluster), then the next vnode in numerical order will also be used as a fallback (i.e. the node n partitions along from the one the key hashed to).  If more vnodes expected to be used are unavailable, more fallbacks will be used.  
 
 If the database operation doesn't know the keys it is interested in, for example in a secondary index query, it must ask every nth vnode - where n is the n-val for the bucket related to that query.  If there is a n-val of three, that means there are three different coverage plans in a healthy cluster that could be used for the query, with the offset being chosen at random to determine which plan will be used.  To be explicit, there will be one coverage plan based on the 1st partition, the 4th partition, the 7th partition etc - and two more coverage plans where the partitions used are right shifted by 1 and 2 partitions respectively.
 
 If a vnode is unavailable for a coverage query, using a fallback node is not a desirable answer.   Coverage queries are run with r=1 (only one vnode is checked for every part of the keyspace), so fallback nodes are unsafe as they only contain the data since the cluster change event occurred for some of those partitions.  So the coverage planner must assess the partitions which are not covered by the plan, and find other vnodes that can fill the role of the missing vnodes.  
+
+TODO: THIS IS TOO MUCH TOO EARLY
 
 For most vnodes in a coverage plan, the coverage plan is interested in all the answers present in that vnode, but where the coverage plan is looking for a vnode to fill a gap in the coverage, the query is passed with a partition filter so that only results in specific partitions are fetched.  Using the partition filter avoids unnecessary duplication of results.  This same filter is used for partitions at the tail of the coverage plan, which would otherwise return results that have already been found from the front of the plan (as the ring-size will not be divisible by three).
 
@@ -34,7 +36,7 @@ Riak has no specifically assigned roles (i.e. there is no master controlling nod
 
 There are some properties of this claiming process which are required, and are listed here in decreasing order of obviousness:
 
-- vnodes within n partitions of each other should not be mapped to the same physical nodes (so that rights in a healthy cluster are always safely distributed across different nodes);
+- vnodes within n partitions of each other should not be mapped to the same physical nodes (so that writes in a healthy cluster are always safely distributed across different nodes);
 
 - vnodes at the tail of the partition list, should not be mapped to the same physical nodes as vnodes at the front of the partition list (i.e. the above property must hold as the tail wraps around to the start);
 
@@ -72,7 +74,7 @@ In some cases, the number of nodes will be divisible by the ring_size, and the c
 
 The list of allocations wraps around.  So now a bucket/key pair mapping to the 31st partition in the list will be stored on the 31st, 32nd and 1st partitions - which maps to | n1 | n2 | n1 | and so will not guarantee physical diversity.
 
-This wrap-around problem exists only if the remainder is smaller than the target_n_val.  Trivially we can resolve this problem (for non-trivial ring-sizes) by adding further nodes in sequence.  If we assume
+This wrap-around problem exists only if the remainder is smaller than the target_n_val.  This problem could be resolved (for non-trivial ring-sizes) by adding further nodes in sequence.  If we assume
 
 `k = target_n_val - (ring_size mod node_count)`
 
@@ -94,7 +96,7 @@ A Riak cluster will generally run at the pace of the slowest vnode.  The vnodes 
 
 - 4 nodes with 6 vnodes and 1 node with 8 vnodes is worse still - as it isolates one node with more load than the others, creating 'one slow node', a scenario with known side effects.
 
-An uneven distribution of nodes will be inefficient.  Isolating one node with more load will have side effects beyond inefficiency, especially where this leads to the vnodes on that node frequently going into an overload state;  although it may be unavoidable for one node to have one more partition that all other nodes if the most even balance is desired (for example with a ring-size of 256 and 5 nodes).
+An uneven distribution of vnodes will be inefficient.  Isolating one node with more load will have side effects beyond inefficiency, especially where this leads to the vnodes on that node frequently going into an overload state;  although it may be unavoidable for one node to have one more partition that all other nodes if the most even balance is desired (for example with a ring-size of 256 and 5 nodes).
 
 ### Minimising transfer counts
 
@@ -102,9 +104,9 @@ A simple sequential plan with handling of tail wrapping, as described above may 
 
 ``| n1 | n2 | n3 | n5 | n6 | n1 | n2 | n4 | n5 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 |``
 
-However transitioning from a 5-node cluster to a 6-node cluster would require at least <b>24</b> vnode transfers. As the new vnode only actually requires 5 vnodes to fulfill a balanced role within the cluster - this is a significant volume of excess work.  This problem is exacerbated by the need to schedule transfers so that both the balance of vnodes and the spacing of vnodes is not compromised during the transfer, and so the actual number of transfers required to safely transition may be much higher.
+However transitioning from a 5-node cluster to a 6-node cluster would require at least <b>24</b> vnode transfers. As the new node only actually requires 5 vnodes to fulfill a balanced role within the cluster - this is a significant volume of excess work.  This problem is exacerbated by the need to schedule transfers so that both the balance of vnodes and the spacing of vnodes is not compromised during the transfer, and so the actual number of transfers required to safely transition may be much higher.
 
-If only the minimum vnodes had been transferred, managing the transfer process if trivial i.e.
+If only the minimum vnodes had been transferred, managing the transfer process is trivial i.e.
 
 to transition from
 
@@ -148,9 +150,9 @@ Plan 3
 - node 5 - 4
 - node 6 - 0
 
-The unbalanced coverage plans will lead to unbalanced resource pressure sin the cluster, and in cases of long-running queries issues with multiple 'slow' nodes.
+The unbalanced coverage plans will lead to unbalanced resource pressures in the cluster, and in cases of long-running queries issues with multiple 'slow' nodes.
 
-If when sequencing we divide the nodes into blocks of three, with a remainder.  If then we allow the first node in each sequence to roll up and down the three nodes by one place at a time (except for the remainder at the tail of the sequence), we would have an alternative distribution:
+If when sequencing we divide the nodes into blocks of three, with a remainder, and then we allow the first node in each sequence to roll up and down the three nodes by one place at a time (except for the remainder at the tail of the sequence), we would have an alternative distribution:
 
 ``| n1 | n2 | n3 | n5 | n6 | n2 | n1 | n5 | n4 | n6 | n2 | n3 | n1 | n5 | n6 | n4 | n2 | n1 | n3 | n5 | n4 | n6 | n1 | n2 | n3 | n4 | n5 | n6 | n1 | n2 | n3 | n4 |``
 
@@ -180,7 +182,7 @@ Plan 3
 - node 5 - 1
 - node 6 - 1
 
-This, in this case will provide for a more even distribution of coverage plans across nodes.  However, this is really only a problem where the number of nodes is a factor of three.  Even in the multiple of three case, although the coverage plans are individually unbalanced, they are collectively balanced; across multiple queries the load is still split across the cluster.  
+This will provide for a more even distribution of coverage plans across nodes.  However, this is really only a problem where the number of nodes is a factor of three.  Even in the multiple of three case, although the coverage plans are individually unbalanced, they are collectively balanced; across multiple queries the load is still split across the cluster.  
 
 This should not be a significant issue when scheduling lots of small coverage queries, but may have unpredictable impacts if scheduling larger coverage queries, such as when key-listing.  However, scheduling larger coverage queries on production systems breaches standard best practice guidance in Riak.
 
@@ -188,7 +190,7 @@ This should not be a significant issue when scheduling lots of small coverage qu
 
 Within Riak the joining, leaving and transferring of nodes may happen one node at a time, or may be requested in bulk.  So any algorithm must be able to cope with both scenarios.  
 
-The bulk join can of course could always be treated as a series of one-at-a-time changes (although note that in Riak this isn't strictly the case).  
+The bulk join could always be treated as a series of one-at-a-time changes (although note that in Riak this isn't strictly the case).  
 
 It may also be considered that clusters generally have two states: with less nodes than target_n_val; with a node count greater than or equal to target_n_val.  Also transitioning between these states is a special case - so adding a node or set of nodes to prompt the transition needs to be optimised to create an initially balanced ring, and node additions beyond that transition should be optimised so as not to spoil the balance of the ring.
 
@@ -205,9 +207,9 @@ In this scenario if two nodes were to fail (node 1 and node 2), the fallbacks el
 - node 7 - 12.5%
 - node 8 - 12.5%
 
-So with this arrangement, a clearly sub-optimal scenario is created on two node failures - as multiple preflists lost node diversity (i.e. they had fallbacks elected that were not on physically diverse nodes to surviving primaries), and there is a significant bias of load towards one particular node.
+With this arrangement, a clearly sub-optimal scenario is created on two node failures - as multiple preflists lost node diversity (i.e. they had fallbacks elected that were not on physically diverse nodes to surviving primaries), and there is a significant bias of load towards one particular node.
 
-So ideally the spacing between partitions for a node should not just be `target_n_val` but further if possible.
+Ideally the spacing between partitions for a node should not just be `target_n_val` but further if possible.
 
 ## Riak Claim v2 and Upholding Claim properties
 
@@ -217,7 +219,7 @@ The properties verified are:
 - The target_n_val is upheld, no node owns two partitions within the default target_n_val when the number of nodes is at least the target_n_val;
 - No over-claiming, no transition leaves one node with less than ring_size div node_count partitions
 - All partitions are assigned;
-- No nodes with no claim are assigned any nodes.
+- Nodes with no claim are not assigned any vnodes.
 
 However there are two significant issues with this property based testing:
 - It assumes one node is added at a time, it does not test for bulk adding of nodes, in particular that bulk-adding which may occur when the cluster is first set-up (e.g. to transition from 1 node to 5 nodes);
@@ -235,7 +237,7 @@ Prior to the target_n_val being reached, the result of these iterations is irrel
 
 This conclusion will be reached as either the ring has been changed and [RingMeetsTargetN](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L330) will evaluate to true, so that the [closing case clause](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L331) will return the ring.  If not, RingMeetsTargetN will return false, and a [claim_rebalance_n/2](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L337) will be called as the exit from the case clause - and this will always return a ring with the vnodes allocated to nodes in sequence.
 
-The next node add will select nodes to transition to node 5.  It will only select nodes that [do not violate](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L323) the meeting of the target_n_val, so when the final case clause in choose_claim_v2 will be reached with the outcome:
+The next node add will select vnodes to transition to node 5.  It will only select nodes that [do not violate](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L323) the meeting of the target_n_val, so when the final case clause in choose_claim_v2 will be reached with the outcome:
 
 ``{RingChanged, EnoughNodes, RingMeetsTargetN} = {true, true, true}``
 
@@ -267,7 +269,7 @@ In the real-world cluster-planning scenario, the five nodes will be added to the
 
 ``{RingChanged, EnoughNodes, RingMeetsTargetN} = {true, true, false}``
 
-There is nothing about the picking algorithm used within choose_claim_v2 which will cause a cluster without enough nodes to transition to a cluster which meets `target_n_val` when the target_n_val node is added.
+There is nothing about the picking algorithm used within choose_claim_v2 which will cause a cluster without enough nodes to transition to a cluster which meets `target_n_val` when the target_n_val'th node is added.
 
 This state will prompt claim_rebalance_n/2 to be the [output of the loop](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L337).  However, unlike the test scenario, the ring record passed to claim_rebalance_n will have all five nodes, not just the first four nodes - as with the cluster plan the ring had all the nodes added in-advance, not just prior to each individual call to choose_claim_v2.  The claim_rebalance_n function looks [at the members](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L501) that have joined the ring (which is all five due to the cluster plan process, not just the four that have been used for iterations through choose_claim_v2).
 
@@ -279,9 +281,9 @@ The function choose_claim_v2 will then be called for a fifth time, for the fifth
 
 So the end outcome of transitioning from 1 node to 5 nodes in a real cluster will not meet the property of upholding a target_n_val, although the property-based testing will always claim this is upheld.
 
-There is therefore no obvious and direct way to create a 5 node cluster in Riak with a ring that has all the desired properties of a 5-node ring.  More dangerously if using a cluster plan to join all nodes at once, the consequent issue that some data will not be correctly dispersed across physical nodes will not be warned; although [application of best practice process](http://docs.basho.com/riak/kv/2.2.3/setup/upgrading/checklist/#confirming-configuration-with-riaknostic) before go-live should highlight the issue correctly.
+There is therefore no obvious and direct way to create a 5-node cluster in Riak with a 32-partition ring that has all the desired properties of a 5-node ring.  More dangerously if using a cluster plan to join all nodes at once, the consequent issue that some data will not be correctly dispersed across physical nodes will not be warned; although [application of best practice process](http://docs.basho.com/riak/kv/2.2.3/setup/upgrading/checklist/#confirming-configuration-with-riaknostic) before go-live should highlight the issue correctly.
 
-Note, that a 5-node cluster is not an unusual exception.  There are multiple potential cases for unexpected outcomes.
+Note, that a 5-node cluster is not a lonely exception.  There are similar issues starting a six node cluster with a ring-size of 128.  Starting a 5 node cluster with a ring-size of 128 through a cluster plan will not have any preflists onto split across nodes, but it will not meet the target_n_val - which is a more difficult issue to spot without manually drawing out the ring.
 
 ## Riak Claim v3 and Upholding Claim properties
 
@@ -289,4 +291,9 @@ Note, that a 5-node cluster is not an unusual exception.  There are multiple pot
 ## Riak and Proposed Claim Improvements
 
 
-## Future Thinking - Availability Zones
+## Future Thinking
+
+### Physical promises
+
+
+### Availability Zones
