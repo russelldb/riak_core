@@ -331,9 +331,11 @@ The overloads are then calculated based on the view of the ring after resolving 
 
 This process of randomly distributing the violating and overloaded partitions to nodes that have capacity and would not cause a breach, will output a plan for a new ownership structure.  The claim_v3 algorithm will run multiple (default 100) iterations of this generating a new potential plan each time.  The plans are then scored on the distances between partitions across the nodes - trying to maximise the spacing of indexes across all nodes.  the best plan is chosen as the result.
 
-The violation score of the best plan is checked before returning the proposal.  If the violation score is 0, that is the proposed plan.  If the best plan has a non-zero violation score, then a new ring arrangement is calculated using the claim_diversify/3, with the new ring arrangement ignoring all previous allocations.  The claim_diversify function supports an algorithm that tries to assign each partition one at a time to a node that will not break the target_n_val.  If there is more than one eligible node a scoring algorithm is used to choose the next one.
+The violation score of the best plan is checked before returning the proposal.  If the violation score is 0, that is the proposed plan.  If the best plan has a non-zero violation score, then a new ring arrangement is calculated using the claim_diversify/3, with the new ring arrangement ignoring all previous allocations.  
 
-The scoring is mysterious in its actual aim.  If we have a series of allocations all within the target_n_val it tends to prefer the most 'jumbled' of these scores (lower scores are considered better):
+The claim_diversify function supports an algorithm that tries to assign each partition one at a time to a node that will not break the target_n_val.  If there is more than one eligible node a scoring algorithm is used to choose the next one.  The scoring is mysterious in its actual aim.  The algorithm looks at all pairs of nodes, and sees how many times those nodes are 1, 2, 3, and 4 partitions apart on the ring (or up to n nodes apart if the target_n_val is not 4), and prefers to find a scenario where pairs are all distances apart with equal frequency.  So if a pair of nodes are always only 1 partition apart, or always 4 partitions apart - then in both these scenarios this will score poorly.  The score is the sum of the scores for all pairs.  When selecting the node, the relative rolling score change is calculated for each selection, and the best option chosen at selection time, based on that rolling score.  There is back-tracking to optimise the score over the complete run.
+
+The end outcome is that if there are a series of allocations all within the target_n_val it tends to prefer the most 'jumbled' of these scores (lower scores are considered better):
 
 ```
 score([a,b,c,d,e,f,a,b,c,d,e,f]), 4).
@@ -351,7 +353,7 @@ score([a,c,b,d,f,e,a,b,c,d,e,f]), 4).
 score([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
 38.59166666666669
 
-score([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
+score([f,c,b,d,f,e,b,a,c,d,e,a]), 4). 
 32.125
 ```
 However, it may also prefer sequences that have risks of breaches on dual node failures, over those sequences that don't have such issues:
@@ -368,14 +370,31 @@ This scoring anomaly may be related to a constraint to continue only diversity w
 
 The claim_diversify algorithm doesn't necessarily prevent preventable target_n_val violations.  It tries to avoid them, but does no back-tracking to resolve them when they occur, and simply logs at a debug level to notify of the breach.
 
-Ultimately the user who initiated the plan will be presented with the final proposal, unaware as to the reasons as to why it is considered to be the best proposal, or even if it meets the requested conditions (e.g. target_n_val).  The user has a choice, of either accepting the proposal or re-rolling the dice and request another proposal.  If the next proposal is considered by the user to be "worse", they cannot revert to the previous proposal, they must keep requesting new proposals until they hit again a proposal they consider to be optimal.
+Note that in the special case where the number of nodes is equal to the target_n_val, all vnodes will be allocated in sequence and no plans will be evaluated.  
+
+Ultimately the operator who initiated the plan request will be presented with the final proposal, unaware as to the reasons as to why it is considered to be the best proposal, or even if it meets the requested conditions (e.g. target_n_val).  The operator has a choice of either accepting the proposal or re-rolling the dice and request another proposal.  If the next proposal is considered by the operator to be "worse", they cannot revert to the previous proposal, they must keep requesting new proposals until they hit again a proposal they consider to be optimal.
 
 ### Claim v3 - Evaluation
 
+The version 3 claim algorithm is significantly more complex than the version 2 algorithm, and harder to use due to its non-deterministic nature.  It is not obvious that it solves all of the problems of the version 2 algorithm, in particular, when running the property-based tests with multiple (rather than one-by-one) node additions property-based test failures occurred due to non-resolution of tail violations.
 
+It should be less likely to result in an unbalanced distribution of partitions.  The randomisation and use of claim_diversify may resolve circumstances where symmetry of distribution has undesirable outcomes (such as unbalanced coverage plans).  However,  improvements on version 2 are not guaranteed - and any improvements come at significant cost both in terms of code complexity, and in terms of the operator experience.
 
 ## Riak and Proposed Claim Improvements
 
+To improve Riak claim, it would be preferable to make simple changes to claim_v2, which are well supported by property-based testing.  Although claim v3 represents the future direction expected by Basho for claim five years ago, it is now five years since it was developed without it being made a default feature of the database.  The complexity-related risks of moving to version 3, outweigh the limited potential for benefits.  Version 3 should remain as an option to be used if version 2 returns sub-optimal results.  
+
+The suggested improvements for version 2 Claim are:
+
+- Add property-based testing for bulk, not just single, additions - note that such new property-based tests have already been proven to fail;
+
+- Add property-based testing to check correctly for a genuine balance of vnode distribution following changes (e.g. the difference between the most populated node, and the least populated, should never exceed 1) - note that it is anticipated that such new property-based tests should fail;
+
+- Alter the claim_rebalance_n algorithm so that it will attempt to auto-resolve tail violations by tail-addition and back-tracking to increase the remainder, where the number of nodes is at least target_n_val + 1;
+
+- Change the selection of indexes to more strictly enforce the selection of a balanced output.
+
+The first three stages are expected to be relatively simple, the final stage may also be simple.
 
 ## Future Thinking
 
