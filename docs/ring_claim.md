@@ -321,7 +321,7 @@ The algorithm and its purpose is described briefly in the code:
 >
 > Diversity measures how often nodes are close to one another in the preference list.  The more diverse (spread of distances apart), the more evenly the responsibility for a failed node is spread across the cluster.  Diversity is calculated by working out the count of each distance for each node pair (currently distances are limited up to target N) and computing the RMS on that.  Lower diversity score is better, 0 if nodes are perfectly diverse.
 
-The algorithm calculates then end distribution of vnodes across nodes (by count) up-front, without reference to the current distribution of vnodes.  These "wants" will produce a cluster with a balanced distribution of vnodes.  For example if he outcome is a 5-node cluster with a ring-size of 32, the algorithm will allocate a target count to each node of 6 vnodes to 3 nodes, and 7 vnodes to 2 nodes, before beginning the process of proposing transfers.
+The algorithm calculates the end distribution of partition across nodes (by count) up-front, without reference to the current distribution of vnodes.  These "wants" will produce a cluster with a balanced distribution of vnodes.  For example if the outcome is a 5-node cluster with a ring-size of 32, the algorithm will allocate a target count to each node of 6 vnodes to 3 nodes, and 7 vnodes to 2 nodes, before beginning the process of proposing transfers.
 
 The algorithm then examines the current ring, and looks for violations and overloads.  Violations are partitions in breach of target_n_val, with both elements of the pair in violation included in the list of violations.  Overloads are all the partitions belong to all of the nodes that own more partitions than their target ownership count.  In most cases when adding nodes to a relatively small cluster, this will be all the partitions.
 
@@ -353,7 +353,7 @@ score([a,c,b,d,f,e,a,b,c,d,e,f]), 4).
 score([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
 38.59166666666669
 
-score([f,c,b,d,f,e,b,a,c,d,e,a]), 4). 
+score([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
 32.125
 ```
 However, it may also prefer sequences that have risks of breaches on dual node failures, over those sequences that don't have such issues:
@@ -376,13 +376,13 @@ Ultimately the operator who initiated the plan request will be presented with th
 
 ### Claim v3 - Evaluation
 
-The version 3 claim algorithm is significantly more complex than the version 2 algorithm, and harder to use due to its non-deterministic nature.  It is not obvious that it solves all of the problems of the version 2 algorithm, in particular, when running the property-based tests with multiple (rather than one-by-one) node additions property-based test failures occurred due to non-resolution of tail violations.
+The version 3 claim algorithm is significantly more complex than the version 2 algorithm, and harder to use due to its non-deterministic nature.  It is not obvious that it solves all of the problems of the version 2 algorithm, in particular, when running the property-based tests with multiple (rather than one-by-one) node additions, property-based test failures occurred due to non-resolution of tail violations.
 
-It should be less likely to result in an unbalanced distribution of partitions.  The randomisation and use of claim_diversify may resolve circumstances where symmetry of distribution has undesirable outcomes (such as unbalanced coverage plans).  However,  improvements on version 2 are not guaranteed - and any improvements come at significant cost both in terms of code complexity, and in terms of the operator experience.
+It should be less likely to result in an unbalanced distribution of partitions.  The randomisation and use of claim_diversify may resolve circumstances where symmetry of distribution has undesirable outcomes (such as unbalanced coverage plans).  However, improvements on version 2 are not guaranteed - and any improvements come at significant cost both in terms of both code complexity, and operator experience.
 
 ## Riak and Proposed Claim Improvements
 
-To improve Riak claim, it would be preferable to make simple changes to claim_v2, which are well supported by property-based testing.  Although claim v3 represents the future direction expected by Basho for claim five years ago, it is now five years since it was developed without it being made a default feature of the database.  The complexity-related risks of moving to version 3, outweigh the limited potential for benefits.  Version 3 should remain as an option to be used if version 2 returns sub-optimal results.  
+To improve Riak claim, it would be preferable to make simple changes to claim_v2, and ensure those changes are well supported by property-based testing.  Although claim v3 represents the future direction expected by Basho for claim five years ago, it is now five years since it was developed without it being made a default feature of the database.  The complexity-related risks of moving to version 3, potentially outweigh the limited potential for benefits.  Version 3 should remain as an option to be used if version 2 returns sub-optimal results.  
 
 The suggested improvements for version 2 Claim are:
 
