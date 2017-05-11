@@ -22,15 +22,11 @@ Every bucket within Riak has an n-val which indicates how many vnodes each value
 
 If the database operation doesn't know the keys it is interested in, for example in a secondary index query, it must ask every nth vnode - where n is the n-val for the bucket related to that query.  If there is a n-val of three, that means there are three different coverage plans in a healthy cluster that could be used for the query, with the offset being chosen at random to determine which plan will be used.  To be explicit, there will be one coverage plan based on the 1st partition, the 4th partition, the 7th partition etc - and two more coverage plans where the partitions used are right shifted by 1 and 2 partitions respectively.
 
-If a vnode is unavailable for a coverage query, using a fallback node is not a desirable answer.   Coverage queries are run with r=1 (only one vnode is checked for every part of the keyspace), so fallback nodes are unsafe as they only contain the data since the cluster change event occurred for some of those partitions.  So the coverage planner must assess the partitions which are not covered by the plan, and find other vnodes that can fill the role of the missing vnodes.  
-
-TODO: THIS IS TOO MUCH TOO EARLY
-
-For most vnodes in a coverage plan, the coverage plan is interested in all the answers present in that vnode, but where the coverage plan is looking for a vnode to fill a gap in the coverage, the query is passed with a partition filter so that only results in specific partitions are fetched.  Using the partition filter avoids unnecessary duplication of results.  This same filter is used for partitions at the tail of the coverage plan, which would otherwise return results that have already been found from the front of the plan (as the ring-size will not be divisible by three).
+If a vnode is unavailable for a coverage query, using a fallback node is not a desirable answer.  Coverage queries are run with r=1 (only one vnode is checked for every part of the keyspace), so fallback nodes are unsafe as they only contain the data since the cluster change event occurred for some of those partitions.  So the coverage planner must assess the partitions which are not covered by the plan, and find other vnodes that can fill the role of the missing vnodes.  A partition filter will be passed along with the accumulating function for vnodes where querying the whole vnode would otherwise return duplicate data.
 
 ## Overview of the Ring - the Claiming problem
 
-If we have a ring - which is really a list of partitions of a key space, which are mapped in turn to vnodes (individual key-value stores): the key question is how do we distribute these vnodes around the physical cluster.  
+If we have a ring - which is really a list of partitions of a key space, which are mapped in turn to vnodes (individual key-value stores): the key question is how do we distribute these vnodes around the physical cluster?  
 
 Riak has no specifically assigned roles (i.e. there is no master controlling node), so in theory distribution of vnodes can be managed by a process of nodes claiming the number of vnodes they want, and a consensus being reached within the cluster what the up-to-date set of claims are.  Different nodes can propose changes to the ring, and detection of conflicts between different proposals is managed using vector clocks.  In practice, such changes to claim are made through administrative action using cluster plans, and the node on which the cluster plan is made will make claims on the ring on behalf of the nodes involved in the change.
 
@@ -38,7 +34,7 @@ There are some properties of this claiming process which are required, and are l
 
 - vnodes within n partitions of each other should not be mapped to the same physical nodes (so that writes in a healthy cluster are always safely distributed across different nodes);
 
-- vnodes at the tail of the partition list, should not be mapped to the same physical nodes as vnodes at the front of the partition list (i.e. the above property must hold as the tail wraps around to the start);
+- vnodes at the tail of the partition list, should not be mapped to the same physical nodes as vnodes at the front of the partition list (i.e. the above property must hold as the ring wraps around to the start);
 
 - there should be an even distribution of vnodes across the physical nodes;
 
@@ -72,9 +68,9 @@ In some cases, the number of nodes will be divisible by the ring_size, and the c
 
 ``| n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 | n3 | n4 | n5 | n1 | n2 |``
 
-The list of allocations wraps around.  So now a bucket/key pair mapping to the 31st partition in the list will be stored on the 31st, 32nd and 1st partitions - which maps to | n1 | n2 | n1 | and so will not guarantee physical diversity.
+The list of allocations wraps around.  So now a bucket/key pair mapping to the 31st partition in the list will be stored on the 31st, 32nd and 1st partitions, which maps to | n1 | n2 | n1 | and so will not guarantee physical diversity.  Riak could respond to a pw=2 write, but in fact the write had only gone to one physical node.  
 
-This wrap-around problem exists only if the remainder is smaller than the target_n_val.  This problem could be resolved (for non-trivial ring-sizes) by adding further nodes in sequence.  If we assume
+This wrap-around problem exists only if the remainder, when dividing the ring_size by the number of nodes, is smaller than the target_n_val.  This problem could be resolved (for non-trivial ring-sizes) by adding further nodes in sequence.  If we assume
 
 `k = target_n_val - (ring_size mod node_count)`
 
@@ -96,7 +92,7 @@ A Riak cluster will generally run at the pace of the slowest vnode.  The vnodes 
 
 - 4 nodes with 6 vnodes and 1 node with 8 vnodes is worse still - as it isolates one node with more load than the others, creating 'one slow node', a scenario with known side effects.
 
-An uneven distribution of vnodes will be inefficient.  Isolating one node with more load will have side effects beyond inefficiency, especially where this leads to the vnodes on that node frequently going into an overload state;  although it may be unavoidable for one node to have one more partition that all other nodes if the most even balance is desired (for example with a ring-size of 256 and 5 nodes).
+An uneven distribution of vnodes will be inefficient.  Isolating one node with more load will have side effects beyond inefficiency, especially where this leads to the vnodes on that node frequently going into an overload state.  It may be unavoidable for one node to have one more partition that all other nodes if the most even balance is desired (for example with a ring-size of 256 and 5 nodes).
 
 ### Minimising transfer counts
 
