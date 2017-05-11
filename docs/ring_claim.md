@@ -279,14 +279,92 @@ So claim_rebalance_n will in this case output a simple striping of the partition
 
 The function choose_claim_v2 will then be called for a fifth time, for the fifth node.  However, node 5 has in this breaking ring all its wants satisfied - so the algorithm will [not make any ring changes](https://github.com/martinsumner/riak_core/blob/develop/src/riak_core_claim.erl#L324-L329).  Consequently `RingChangedM = false` at the final case clause, and claim_rebalance_n will be called.  The inputs to claim_rebalance_n are unchanged from the first call, and so this will produce the same result <b>with tail violations</b>.  
 
-So the end outcome of transitioning from 1 node to 5 nodes in a real cluster will not meet the property of upholding a target_n_val, although the property-based testing will always claim this is upheld.
+So the end outcome of transitioning from 1 node to 5 nodes in a real cluster will not meet the property of upholding a target_n_val, although the property-based testing will always claim this is upheld.  Further, even when an additional node is added to the cluster, the algorithm will only resolve once of these tail violations.  Only the addition of a seventh node will lead to a cluster upholding the target_n_val.
 
 There is therefore no obvious and direct way to create a 5-node cluster in Riak with a 32-partition ring that has all the desired properties of a 5-node ring.  More dangerously if using a cluster plan to join all nodes at once, the consequent issue that some data will not be correctly dispersed across physical nodes will not be warned; although [application of best practice process](http://docs.basho.com/riak/kv/2.2.3/setup/upgrading/checklist/#confirming-configuration-with-riaknostic) before go-live should highlight the issue correctly.
 
 Note, that a 5-node cluster is not a lonely exception.  There are similar issues starting a six node cluster with a ring-size of 128.  Starting a 5 node cluster with a ring-size of 128 through a cluster plan will not have any preflists onto split across nodes, but it will not meet the target_n_val - which is a more difficult issue to spot without manually drawing out the ring.
 
+### Claim v2 - Evaluation
+
+Evaluating the Claim v2 algorithm reveals the following weaknesses:
+
+- Property-based testing doesn't correctly test the safety clusters formed through cluster plans;
+
+- The algorithm (and the test) don't check correctly for a truly even distribution of vnodes across nodes;
+
+- The algorithm doesn't resolve tail violations when falling back to sequenced allocation of partitions;
+
+- When adding one node at a time, the algorithm will not resolve all violations in the previous ring, even if such violations are resolvable.
+
+- The algorithm doesn't consider the optimality of the outcome (could vnodes be further apart than target_n_val, could coverage query load be better balanced).
+
+The Claimv2 algorithm does have the following positives:
+
+- Adding one node at a time will never break the target_n_val;
+
+- Once a cluster ring configuration supports the target_n_val, adding further nodes will never introduce target_n_val violations;
+
+- The algorithm will produce a minimal number of transfers in the case of node addition.
+
 ## Riak Claim v3 and Upholding Claim properties
 
+Riak has a v3 claim algorithm, which is not currently enabled by default.  It can however be enabled within a cluster, should issues be discovered with v2 claim.
+
+> Claim V3 - unlike the v1/v2 algorithms, v3 treats claim as an optimization problem. In it's current form it creates a number of possible claim plans and evaluates them for violations, balance and diversity, choosing the 'best' plan.
+
+> Violations are a count of how many partitions owned by the same node are within target-n of one another. Lower is better, 0 is desired if at all possible.
+
+> Balance is a measure of the number of partitions owned versus the number of partitions wanted.  Want is supplied to the algorithm by the caller as a list of node/counts.  The score for deviation is the RMS of the difference between what the node wanted and what it has.  Lower is better, 0 if all wants are met.
+
+> Diversity measures how often nodes are close to one another in the preference list.  The more diverse (spread of distances apart), the more evenly the responsibility for a failed node is spread across the cluster.  Diversity is calculated by working out the count of each distance for each node pair (currently distances are limited up to target N) and computing the RMS on that.  Lower diversity score is better, 0 if nodes are perfectly diverse.
+
+The algorithm calculates then end distribution of vnodes across nodes (by count) up-front, without reference to the current distribution of vnodes.  These "wants" will produce a cluster with a balanced distribution of vnodes.  For example if he outcome is a 5-node cluster with a ring-size of 32, the algorithm will allocate a target count to each node of 6 vnodes to 3 nodes, and 7 vnodes to 2 nodes, before proposing of any transfers.
+
+The algorithm then examines the current ring, and looks for violations and overloads.  Violations are partitions in breach of target_n_val, with both elements of the pair in violation included in the list of violations.  Overloads are all the indexes belong to all of the nodes that own more indexes than their target ownership count.
+
+Two rounds of takes are attempted.  Firstly, for each partition in violation, the partition is offered to a randomly-selected node which is capable (i.e. the node has spare capacity under its target count, and has no partition within target_n_val of the offered partition) of taking that violating partition.  This will create a new version of the ring.
+
+The overloads are then calculated based on the view of the ring after resolving violations.  The same random take process is used then to distribute the overload indexes until no node is a "taker" - i.e. no node has spare capacity, and there are spare indexes left for it to take.
+
+This process of randomly distributing the violating and overloaded partitions to nodes that have capacity and would not cause a breach, constitutes a claim plan.  The claim_v3 algorithm will run multiple (default 100) iterations of this generating a new potential plan each time.  The plans are then scored on the distances between partitions across the nodes - trying to maximise the spacing of indexes across all nodes.  
+
+The best plan is the result, and that best plan will have a violation score.  If the violation score is 0, that is the proposed plan.  If the best plan has a non-zero violation score, then a new ring arrangement is calculated using the claim_diversify/3, with the new ring arrangement ignoring all previous allocations.  
+
+The claim_diversify is an algorithm that tries to assign each partition one at a time to a node that will not break the target_n_val.  If there is more than one eligible node a scoring algorithm is used to choose the next one.
+
+The scoring is mysterious in its actual aim.  If we have a series of allocations all within the target_n_val it tends to prefer the most 'jumbled' of these scores:
+
+```
+score([a,b,c,d,e,f,a,b,c,d,e,f]), 4).
+76.79999999999986
+
+score([a,c,b,d,e,f,a,c,b,d,e,f]), 4).
+76.79999999999988
+
+score([a,c,b,d,e,f,a,b,c,d,e,f]), 4).
+46.79999999999991
+
+score([a,c,b,d,f,e,a,b,c,d,e,f]), 4).
+40.799999999999955
+
+score([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
+38.59166666666669
+
+score([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
+32.125
+```
+However, it may also prefer sequences that have risks of breaches on dual node failures, over those sequences that don't have such issues:
+
+```
+ScoreFun([a, b, c, d, e, f, g, h, a, b, c, d, e, f, g, h], 4).
+109.71428571428542
+
+ScoreFun([a, b, c, d, a, b, c, d, e, f, g, h, e, f, g, h], 4).
+66.0
+```
+
+The algorithm doesn't prevent preventable target_n_val violations either.  It tries to avoid them, but does no back-tracking to resolve them when they occur, and simply logs at a debug level to notify of the breach.
 
 ## Riak and Proposed Claim Improvements
 
