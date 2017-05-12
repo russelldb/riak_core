@@ -392,7 +392,7 @@ The suggested improvements for version 2 claim are:
 
 The first three stages are expected to be relatively simple, the final stage may also be simple.
 
-## Future Thinking
+## Some Further Thoughts
 
 ### Physical promises
 
@@ -405,3 +405,17 @@ This may silently become untrue if the target_n_val commitment was not met durin
 The abstract nature of ring commitments requires the developer to unnecessarily reduce availability to be sure that physical promises of diversity are kept.  Put coordinators, and GET finite state machines know more about physical diversity at run-time than the developer can assume at design-time - they know which nodes requests have been forwarded to, not just which vnodes.  It would be a potential improvement to have PUT and GET options where the developer could request for confirmation of a level of physical not logical diversity before acknowledgement.
 
 ### Availability Zones
+
+Running Riak in a cloud environment is challenging where durability guarantees are required.  Riak write guarantees are based around the ring, and some assumptions can be made about how the ring-based commitments map to physical nodes: however in a cloud environment we can't now assume that different physical nodes have hardware diversity.  Corruption of data on one node in an Availability Zone may be coupled with an increased likelihood of corruption of data on another node within the same Availability Zone.  
+
+If we want to make sure that data is safe in the cloud, the data needs to be written to two Availability Zones.  However, no assumptions can be made about this based on the current ring claim algorithm.
+
+There are real issues with making riak_core Availability Zone aware:
+
+- If the cloud environment supports only three Availability Zones then the wraparound problem at the tail of the ring is unavoidable for all ring-sizes - some preflists will only exist in two availability zones, and so even setting pw=2 will not guarantee physical diversity in a healthy cluster.
+
+- There is significant additional cost and notable performance impact when splitting a Riak cluster across availability zones due to network charges and network latency.  This can be partially mitigated by [using HEAD requests](https://github.com/martinsumner/leveled/blob/master/docs/FUTURE.md#get_fsm---using-head) but this is not available in any production-ready backend.
+
+- If the cloud environment supports only three Availability Zones any best-case diversity configuration would lead to coverage plans being exclusively focused within a single availability zone (as some cluster plans may involve significant data transfer, this may actually be advantageous).
+
+It may be possible to make some commitments by combining claim changes with physical promises - but there is no direct answer to supporting Availability Zone intelligence through the ring.
