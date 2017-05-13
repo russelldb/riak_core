@@ -323,7 +323,7 @@ The algorithm then examines the current ring, and looks for [violations](https:/
 
 [Two rounds of "takes" are attempted](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L883-L888).  Firstly, for each partition in violation, the partition is offered to a randomly-selected node which is capable (i.e. the node has spare capacity under its target count, and has no partition within target_n_val of the offered partition) of taking that violating partition.  This will create a new version of the ring.
 
-The overloads are then calculated based on the view of the ring after resolving violations.  The same random take process is used then to distribute the overload indexes until no node is a "taker" - i.e. no node has spare capacity, or there are no spare indexes left for any nodes to take.
+The overloads are then calculated based on the view of the ring after resolving violations.  The same random take process is used then to distribute the overload indexes until no node is a "taker" - i.e. no node has spare capacity (unfulfilled wants), or there are no spare indexes left for any nodes to take.
 
 This process of randomly distributing the violating and overloaded partitions to nodes that have capacity and would not cause a breach, will output a plan for a new ownership structure.  The claim_v3 algorithm will run multiple ([default 100](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L437)) iterations of this generating a new potential plan each time.  The plans are then scored on [diversity](ring_claim.md#diversity-scoring) and balance, although it is unclear as to how the outcome could end up unbalanced.  The best plan is chosen as the result.
 
@@ -339,17 +339,29 @@ The end outcome of diversity scoring is that if there are a series of allocation
 ScoreFun([a,b,c,d,e,f,a,b,c,d,e,f]), 4).
 76.79999999999986
 
+%% Swap the second and third partitions, and rebalance the sequences
+%% by also swapping the same way the eight and ninth partitions
+
 ScoreFun([a,c,b,d,e,f,a,c,b,d,e,f]), 4).
 76.79999999999988
+
+%% Swap back the eighth and ninth partitions, so only second and third
+%% partitions vary from sequence
 
 ScoreFun([a,c,b,d,e,f,a,b,c,d,e,f]), 4).
 46.79999999999991
 
+%% In addition, swap the fifth and sixth partitions
+
 ScoreFun([a,c,b,d,f,e,a,b,c,d,e,f]), 4).
 40.799999999999955
 
+%% In addition swap the seventh and eighth partitions
+
 ScoreFun([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
 38.59166666666669
+
+%% In addition swap the first and last partitions
 
 ScoreFun([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
 32.125
