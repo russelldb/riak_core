@@ -366,11 +366,19 @@ ScoreFun([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
 ScoreFun([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
 32.125
 ```
-However, it may also prefer sequences that have risks of breaches on dual node failures, over those sequences that don't have such issues:
+However, it may also prefer sequences that have a [risk of breach](ring_claim.md#further-spacing) on dual node failures, over those sequences that don't have such issues:
 
 ```
 ScoreFun([a, b, c, d, e, f, g, h, a, b, c, d, e, f, g, h], 4).
 109.71428571428542
+
+%% The above will always write to three different physical nodes on any dual
+%% node failure.
+%%
+%% But the example below will no longer write to three different nodes if
+%% any two of {a, b, c, d} or any two of {e, f, g, h} fail.
+%%
+%% The worse sequence (from this perspective) scores better.
 
 ScoreFun([a, b, c, d, a, b, c, d, e, f, g, h, e, f, g, h], 4).
 66.0
