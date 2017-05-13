@@ -317,39 +317,41 @@ The algorithm and its purpose is described briefly in the code:
 >
 > Diversity measures how often nodes are close to one another in the preference list.  The more diverse (spread of distances apart), the more evenly the responsibility for a failed node is spread across the cluster.  Diversity is calculated by working out the count of each distance for each node pair (currently distances are limited up to target N) and computing the RMS on that.  Lower diversity score is better, 0 if nodes are perfectly diverse.
 
-The algorithm calculates the end distribution of partition across nodes (by count) up-front, without reference to the current distribution of vnodes.  These "wants" will produce a cluster with a balanced distribution of vnodes.  For example if the outcome is a 5-node cluster with a ring-size of 32, the algorithm will allocate a target count to each node of 6 vnodes to 3 nodes, and 7 vnodes to 2 nodes, before beginning the process of proposing transfers.
+The algorithm calculates the end distribution of partition across nodes (by count) [up-front](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L386), without reference to the current distribution of vnodes.  These "wants" will produce a cluster with [a balanced distribution](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L775-L793) of vnodes.  For example if the outcome is a 5-node cluster with a ring-size of 32, the algorithm will allocate a target count to each node of 6 vnodes to 3 nodes, and 7 vnodes to 2 nodes, before beginning the process of proposing transfers.
 
-The algorithm then examines the current ring, and looks for violations and overloads.  Violations are partitions in breach of target_n_val, with both elements of the pair in violation included in the list of violations.  Overloads are all the partitions belong to all of the nodes that own more partitions than their target ownership count.  In most cases when adding nodes to a relatively small cluster, this will be all the partitions.
+The algorithm then examines the current ring, and looks for [violations](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L896-L904) and [overloads](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L908-L920).  Violations are partitions in breach of target_n_val, with both elements of the pair in violation included in the list of violations.  Overloads are <b>all</b> of the partitions belong to all of the nodes that own more partitions than their target ownership count.  In most cases when adding nodes to a relatively small cluster, this will be all the partitions.
 
-Two rounds of "takes" are attempted.  Firstly, for each partition in violation, the partition is offered to a randomly-selected node which is capable (i.e. the node has spare capacity under its target count, and has no partition within target_n_val of the offered partition) of taking that violating partition.  This will create a new version of the ring.
+[Two rounds of "takes" are attempted](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L883-L888).  Firstly, for each partition in violation, the partition is offered to a randomly-selected node which is capable (i.e. the node has spare capacity under its target count, and has no partition within target_n_val of the offered partition) of taking that violating partition.  This will create a new version of the ring.
 
 The overloads are then calculated based on the view of the ring after resolving violations.  The same random take process is used then to distribute the overload indexes until no node is a "taker" - i.e. no node has spare capacity, or there are no spare indexes left for any nodes to take.
 
-This process of randomly distributing the violating and overloaded partitions to nodes that have capacity and would not cause a breach, will output a plan for a new ownership structure.  The claim_v3 algorithm will run multiple (default 100) iterations of this generating a new potential plan each time.  The plans are then scored on the distances between partitions across the nodes - trying to maximise the spacing of indexes across all nodes.  the best plan is chosen as the result.
+This process of randomly distributing the violating and overloaded partitions to nodes that have capacity and would not cause a breach, will output a plan for a new ownership structure.  The claim_v3 algorithm will run multiple ([default 100](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L437)) iterations of this generating a new potential plan each time.  The plans are then scored on [diversity](../ring_claim.md#Diversity-Scoring) and balance, although it is unclear as to how the outcome could end up unbalanced.  The best plan is chosen as the result.
 
-The violation score of the best plan is checked before returning the proposal.  If the violation score is 0, that is the proposed plan.  If the best plan has a non-zero violation score, then a new ring arrangement is calculated using the claim_diversify/3, with the new ring arrangement ignoring all previous allocations.  
+The violation score of the best plan is checked before returning the proposal.  If the violation score is 0, that is the proposed plan.  If the best plan has a non-zero violation score, then a new ring arrangement is calculated using the [claim_diversify/3](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L471-L477), with the new ring arrangement ignoring all previous allocations.  
 
-The claim_diversify function supports an algorithm that tries to assign each partition one at a time to a node that will not break the target_n_val.  If there is more than one eligible node a scoring algorithm is used to choose the next one.  The scoring is mysterious in its actual aim.  The algorithm looks at all pairs of nodes, and sees how many times those nodes are 1, 2, 3, and 4 partitions apart on the ring (or up to n nodes apart if the target_n_val is not 4), and prefers to find a scenario where pairs are all distances apart with equal frequency.  So if a pair of nodes are always only 1 partition apart, or always 4 partitions apart - then in both these scenarios this will score poorly.  The score is the sum of the scores for all pairs.  When selecting the node, the relative rolling score change is calculated for each selection, and the best option chosen at selection time, based on that rolling score.  There is back-tracking to optimise the score over the complete run.
+The claim_diversify function supports an algorithm that tries to assign each partition one at a time to a node that will not break the target_n_val.  If there is more than one eligible node a scoring algorithm is used to choose the next one.  The scoring is mysterious in its actual aim.  The algorithm looks at all pairs of nodes, and sees how many times those nodes are 1, 2, 3, and 4 partitions apart on the ring (or up to n nodes apart if the target_n_val is not 4), and prefers to find a scenario where pairs are all distances apart with equal frequency.  So if a pair of nodes are always only 1 partition apart, or always 4 partitions apart - then in both these scenarios this will score poorly.  The score is the sum of the scores for all pairs.  When selecting the node, the relative rolling score change is calculated for each selection, and the best option chosen at selection time, based on that rolling score.  There is no back-tracking to optimise the score over the complete run.
 
-The end outcome is that if there are a series of allocations all within the target_n_val it tends to prefer the most 'jumbled' of these scores (lower scores are considered better):
+### Diversity Scoring
+
+The end outcome of diversity scoring is that if there are a series of allocations all within the target_n_val it tends to prefer the most 'jumbled' of these scores (lower scores are considered better):
 
 ```
-score([a,b,c,d,e,f,a,b,c,d,e,f]), 4).
+ScoreFun([a,b,c,d,e,f,a,b,c,d,e,f]), 4).
 76.79999999999986
 
-score([a,c,b,d,e,f,a,c,b,d,e,f]), 4).
+ScoreFun([a,c,b,d,e,f,a,c,b,d,e,f]), 4).
 76.79999999999988
 
-score([a,c,b,d,e,f,a,b,c,d,e,f]), 4).
+ScoreFun([a,c,b,d,e,f,a,b,c,d,e,f]), 4).
 46.79999999999991
 
-score([a,c,b,d,f,e,a,b,c,d,e,f]), 4).
+ScoreFun([a,c,b,d,f,e,a,b,c,d,e,f]), 4).
 40.799999999999955
 
-score([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
+ScoreFun([a,c,b,d,f,e,b,a,c,d,e,f]), 4).
 38.59166666666669
 
-score([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
+ScoreFun([f,c,b,d,f,e,b,a,c,d,e,a]), 4).
 32.125
 ```
 However, it may also prefer sequences that have risks of breaches on dual node failures, over those sequences that don't have such issues:
@@ -368,7 +370,9 @@ The claim_diversify algorithm doesn't necessarily prevent preventable target_n_v
 
 Note that in the special case where the number of nodes is equal to the target_n_val, all vnodes will be allocated in sequence and no plans will be evaluated.  
 
-Ultimately the operator who initiated the plan request will be presented with the final proposal, unaware as to the reasons as to why it is considered to be the best proposal, or even if it meets the requested conditions (e.g. target_n_val).  The operator has a choice of either accepting the proposal or re-rolling the dice and request another proposal.  If the next proposal is considered by the operator to be "worse", they cannot revert to the previous proposal, they must keep requesting new proposals until they hit again a proposal they consider to be optimal.
+### Operator Experience
+
+The claim process is initiated by an operator submitting a cluster plan, and ultimately the operator who initiated the plan request will be presented with the final proposal, unaware as to the reasons as to why it is considered to be the best proposal, or even if it meets the requested conditions (e.g. target_n_val).  The operator has a choice of either accepting the proposal or re-rolling the dice and request another proposal.  If the next proposal is considered by the operator to be "worse", they cannot revert to the previous proposal, they must keep requesting new proposals until they hit again a proposal they consider to be optimal.
 
 ### Claim v3 - Evaluation
 
