@@ -218,7 +218,7 @@ The properties verified are:
 - Nodes with no claim are not assigned any vnodes.
 
 However there are two significant issues with this property based testing:
-- It assumes one node is added at a time, it does not test for bulk adding of nodes, in particular that bulk-adding which may occur when the cluster is first set-up (e.g. to transition from 1 node to 5 nodes);
+- It assumes [one node is added at a time](https://github.com/basho/riak_core/blob/develop/src/riak_core_claim.erl#L1127-L1130), it does not test for bulk adding of nodes, in particular that bulk-adding which may occur when the cluster is first set-up (e.g. to transition from 1 node to 5 nodes);
 - The list of properties is incomplete - no over-claiming does not prove balanced distribution, and there is no testing of balanced coverage plans, optimisation of spacing and minimisation of transition changes.
 
 ### An example - Building a 5 node Cluster
@@ -402,7 +402,7 @@ It should be less likely to result in an unbalanced distribution of partitions. 
 
 ## Riak and Proposed Claim Improvements
 
-To improve Riak claim, it would be preferable to make simple changes to claim_v2, and ensure those changes are well supported by property-based testing.  Although claim v3 represents the future direction expected by Basho for claim five years ago, it is now five years since it was developed without it being made a default feature of the database.  The complexity-related risks of moving to version 3, potentially outweigh the limited potential for benefits.  Version 3 should remain as an option to be used if version 2 returns sub-optimal results.  
+To improve Riak claim, it would be preferable to make simple changes to claim_v2, and ensure those changes are well supported by property-based testing.  Although claim v3 represents the future direction expected by Basho for claim five years ago, it is now five years since it was developed without it being made a default feature of the database.  The complexity-related risks of moving to version 3, potentially outweigh the limited potential for benefits.  Version 3 should remain as an option to be used if version 2 returns sub-optimal results, but the recommendation here is to improve by fixing claim v2 rather than progressing a move to claim v3 .  
 
 The suggested improvements for version 2 claim are:
 
@@ -418,13 +418,13 @@ The first three stages are expected to be relatively simple, the final stage may
 
 ## Some Further Thoughts
 
-### Physical promises
+### Physical Promises at Run-Time
 
 To the developer, Riak will provide promises with respect to the ring.  The developer can choose n, r, w, pw, pr, dw values to suit the application - but all these refer to vnodes and don't say anything directly about physical nodes.  The relationship between the ring-based promises and the physical outcome have to be assumed.
 
 If as a developer the requirement of the database is that data has been made durable on two physical nodes before it is acknowledged, the way of being sure of this commitment is by setting primary writes (pw) to 2.  In this case, <b>if</b> the ring has been constructed correctly with a target_n_val of 4, then confirmation from two primary partitions is enough to be sure that the update has been acknowledged by two different physical nodes.
 
-This may silently become untrue if the target_n_val commitment was not met during the building of the cluster.  More commonly, there may also be occasions when the data is sent to two physical nodes, but is not written to two primaries.  If two nodes fail, all partitions whose preflist include both those nodes will now "fail" to acknowledge writes - but if the target_n_val is met, the write will still almost certainly have been sent to two physical nodes.  Confusingly for the developer, at this stage there is no way of confirming whether or not the write did get to two nodes.  Replaying the write with pw=2 will continuously fail, reading the object with pr=2 will continuously fail, regardless of whether the object is actually on two physical nodes.  If the developer knows that only two nodes have failed, and that the target_n_val of 4 was met during the last cluster change, then the developer could assume that writing with dw=2 and pw=1 was safe.  However, the developer has no way of confirming this programmatically at run-time.
+This may silently become untrue if the target_n_val commitment was not met during the building of the cluster.  More commonly, there may also be occasions when the data is sent to two physical nodes, but is not written to two primaries.  If two nodes fail, all partitions whose preflist include both those nodes, will now "fail" to acknowledge writes if pw is set to 2 - but if the target_n_val was met, the write will still almost certainly have been sent to two physical nodes.  Confusingly for the developer, at this stage there is no way of confirming whether or not the write did get to two nodes.  Replaying the write with pw=2 will continuously fail, reading the object with pr=2 will continuously fail, regardless of whether or not the object is actually on two physical nodes.  If the developer knows that only two nodes have failed, and that the target_n_val of 4 was met during the last cluster change, then the developer could assume that writing with dw=2 and pw=1 was safe.  However, the developer has no way of confirming this programmatically at run-time.
 
 The abstract nature of ring commitments requires the developer to unnecessarily reduce availability to be sure that physical promises of diversity are kept.  Put coordinators, and GET finite state machines know more about physical diversity at run-time than the developer can assume at design-time - they know which nodes requests have been forwarded to, not just which vnodes.  It would be a potential improvement to have PUT and GET options where the developer could request for confirmation of a level of physical not logical diversity before acknowledgement.
 
@@ -442,4 +442,4 @@ There are real issues with making riak_core Availability Zone aware:
 
 - If the cloud environment supports only three Availability Zones any best-case diversity configuration would lead to coverage plans being exclusively focused within a single availability zone (as some cluster plans may involve significant data transfer, this may actually be advantageous).
 
-It may be possible to make some commitments by combining claim changes with physical promises - but there is no direct answer to supporting Availability Zone intelligence through the ring.
+It may be possible to make some commitments by combining claim changes with physical run-time promises - but there is no obvious answer to supporting Availability Zone intelligence when using distribution of data through a ring.
