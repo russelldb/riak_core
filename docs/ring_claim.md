@@ -392,7 +392,7 @@ Note that in the special case where the number of nodes is equal to the target_n
 
 ### Operator Experience
 
-The claim process is initiated by an operator submitting a cluster plan, and ultimately the operator who initiated the plan request will be presented with the final proposal, unaware as to the reasons as to why it is considered to be the best proposal, or even if it meets the requested conditions (e.g. target_n_val).  The operator has a choice of either accepting the proposal or re-rolling the dice and request another proposal.  If the next proposal is considered by the operator to be "worse", they cannot revert to the previous proposal, they must keep requesting new proposals until they hit again a proposal they consider to be optimal.
+The claim process is initiated by an operator submitting a cluster plan, and when calculatins are complete that operator will be presented with the final proposal, unaware as to the reasons as to why it is considered to be the best proposal, or even if it meets the requested conditions (e.g. target_n_val).  The operator has a choice of either accepting the proposal or re-rolling the dice and request another proposal.  If the next proposal is considered by the operator to be "worse", they cannot revert to the previous proposal, they must keep requesting new proposals until they hit again a proposal they consider to be "optimal".
 
 ### Claim v3 - Evaluation
 
